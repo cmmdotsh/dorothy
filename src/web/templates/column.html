@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+
+{% block title %}{{ column|title }}{% endblock %}
+
+{% block content %}
+<section class="column-page">
+    <h2 class="section-title">{{ column|title }}</h2>
+
+    {% if stories %}
+    <div class="stories-list">
+        {% for story in stories %}
+        <article class="story-card story-card-full">
+            <h3 class="story-headline">
+                <a href="/story/{{ story.story_id }}">{{ story.generated_headline }}</a>
+            </h3>
+
+            {% if story.summary %}
+            <p class="story-summary">{{ story.summary[:300] }}{% if story.summary|length > 300 %}...{% endif %}</p>
+            {% endif %}
+
+            <div class="story-meta">
+                <span class="source-count">{{ story.source_count }} sources</span>
+                <span class="article-count">{{ story.article_count }} articles</span>
+            </div>
+
+            {% if story.bias_coverage %}
+            <div class="bias-breakdown">
+                {% for bias, count in story.bias_coverage.items() %}
+                <span class="bias-pill" style="background: {{ bias_colors.get(bias, '#888') }}">
+                    {{ bias|title }}: {{ count }}
+                </span>
+                {% endfor %}
+            </div>
+            {% endif %}
+
+            {% if story.sources_used %}
+            <div class="source-list">
+                <span class="source-label">Sources:</span>
+                {% for source in story.sources_used[:5] %}
+                <span class="source-name">{{ source }}</span>{% if not loop.last %}, {% endif %}
+                {% endfor %}
+                {% if story.sources_used|length > 5 %}
+                <span class="more-sources">+{{ story.sources_used|length - 5 }} more</span>
+                {% endif %}
+            </div>
+            {% endif %}
+
+            <a href="/story/{{ story.story_id }}" class="read-more">Read full synthesis →</a>
+        </article>
+        {% endfor %}
+    </div>
+    {% else %}
+    <p class="no-stories">No synthesized stories available for {{ column }}. Stories require coverage from at least 2 different sources.</p>
+    {% endif %}
+</section>
+{% endblock %}

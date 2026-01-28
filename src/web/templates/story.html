@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+
+{% block title %}{{ story.generated_headline }}{% endblock %}
+
+{% block content %}
+<article class="story-detail">
+    <header class="story-header">
+        <h2 class="story-headline">{{ story.generated_headline }}</h2>
+
+        <div class="story-meta">
+            {% if story.column %}
+            <a href="/column/{{ story.column }}" class="column-tag">{{ story.column|title }}</a>
+            {% endif %}
+            <span class="source-count">{{ story.source_count }} sources</span>
+            <span class="article-count">{{ story.article_count }} articles</span>
+        </div>
+    </header>
+
+    {% if story.hero_image_url %}
+    <figure class="hero-image">
+        <img src="{{ story.hero_image_url }}" alt="{{ story.generated_headline }}" loading="lazy">
+    </figure>
+    {% endif %}
+
+    <section class="story-content">
+        <h3>Balanced Summary</h3>
+        <div class="summary-text">
+            {{ story.summary|safe }}
+        </div>
+    </section>
+
+    {% if story.bias_coverage %}
+    <section class="bias-section">
+        <h3>Coverage by Perspective</h3>
+        <div class="bias-chart">
+            {% for bias in ['left', 'lean-left', 'center', 'lean-right', 'right'] %}
+                {% if bias in story.bias_coverage %}
+                <div class="bias-bar">
+                    <span class="bias-label" style="color: {{ bias_colors[bias] }}">{{ bias|title }}</span>
+                    <div class="bar-container">
+                        <div class="bar-fill" style="width: {{ (story.bias_coverage[bias] / story.article_count * 100)|round }}%; background: {{ bias_colors[bias] }}"></div>
+                    </div>
+                    <span class="bias-count">{{ story.bias_coverage[bias] }}</span>
+                </div>
+                {% endif %}
+            {% endfor %}
+        </div>
+    </section>
+    {% endif %}
+
+    {% if story.sources_used %}
+    <section class="sources-section">
+        <h3>Sources ({{ story.sources_used|length }})</h3>
+        <ul class="source-list-detailed">
+            {% for source in story.sources_used %}
+            <li class="source-item">{{ source }}</li>
+            {% endfor %}
+        </ul>
+    </section>
+    {% endif %}
+
+    {% if story.articles %}
+    <section class="articles-section">
+        <h3>Original Articles ({{ story.articles|length }})</h3>
+        <div class="articles-list">
+            {% for article in story.articles %}
+            <div class="article-item">
+                <span class="bias-pill small" style="background: {{ bias_colors.get(article.source_bias, '#888') }}">{{ article.source_bias|title|replace('-', ' ') }}</span>
+                <a href="{{ article.url }}" target="_blank" rel="noopener" class="article-link">
+                    {{ article.headline }}
+                </a>
+                <span class="article-source">— {{ article.source_name }}</span>
+            </div>
+            {% endfor %}
+        </div>
+    </section>
+    {% endif %}
+
+    <footer class="story-footer">
+        <a href="/" class="back-link">← Back to Front Page</a>
+        {% if story.column %}
+        <a href="/column/{{ story.column }}" class="back-link">← Back to {{ story.column|title }}</a>
+        {% endif %}
+    </footer>
+</article>
+{% endblock %}

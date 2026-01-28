@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+
+{% block title %}Front Page{% endblock %}
+
+{% block content %}
+<section class="front-page">
+    <h2 class="section-title">Today's Top Stories</h2>
+
+    <div class="columns-grid">
+        {% for col in columns %}
+        <div class="column-section">
+            <h3 class="column-header">
+                <a href="/column/{{ col }}">{{ col|title }}</a>
+            </h3>
+
+            {% if stories_by_column.get(col) %}
+                {% for story in stories_by_column[col] %}
+                <article class="story-card">
+                    <h4 class="story-headline">
+                        <a href="/story/{{ story.story_id }}">{{ story.generated_headline }}</a>
+                    </h4>
+                    <div class="story-meta">
+                        <span class="source-count">{{ story.source_count }} sources</span>
+                        <span class="article-count">{{ story.article_count }} articles</span>
+                    </div>
+                    {% if story.bias_coverage %}
+                    <div class="bias-indicators">
+                        {% for bias in ['left', 'lean-left', 'center', 'lean-right', 'right'] %}
+                            {% if bias in story.bias_coverage %}
+                            <span class="bias-dot" style="background: {{ bias_colors[bias] }}" title="{{ bias|title }}: {{ story.bias_coverage[bias] }} articles"></span>
+                            {% endif %}
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+                </article>
+                {% endfor %}
+            {% else %}
+                <p class="no-stories">No stories available</p>
+            {% endif %}
+
+            <a href="/column/{{ col }}" class="view-all">View all {{ col }} stories →</a>
+        </div>
+        {% endfor %}
+    </div>
+</section>
+{% endblock %}

@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Dorothy{% endblock %} - Newspaper of Averages</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <header class="site-header">
+        <div class="header-content">
+            <a href="/" class="logo">
+                <h1>Dorothy</h1>
+                <span class="tagline">The Newspaper of Averages</span>
+            </a>
+            <nav class="main-nav">
+                {% for col in columns %}
+                <a href="/column/{{ col }}" class="nav-link {% if column == col %}active{% endif %}">
+                    {{ col|title }}
+                </a>
+                {% endfor %}
+            </nav>
+        </div>
+    </header>
+
+    <main class="main-content">
+        {% block content %}{% endblock %}
+    </main>
+
+    <footer class="site-footer">
+        <p>Dorothy aggregates news from {{ columns|length * 8 }}+ sources across the political spectrum to provide balanced coverage.</p>
+        <p class="bias-legend">
+            <span class="bias-pill" style="background: {{ bias_colors.left }}">Left</span>
+            <span class="bias-pill" style="background: {{ bias_colors['lean-left'] }}">Lean Left</span>
+            <span class="bias-pill" style="background: {{ bias_colors.center }}">Center</span>
+            <span class="bias-pill" style="background: {{ bias_colors['lean-right'] }}">Lean Right</span>
+            <span class="bias-pill" style="background: {{ bias_colors.right }}">Right</span>
+        </p>
+    </footer>
+</body>
+</html>

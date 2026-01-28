@@ -1,0 +1,377 @@
+# Dorothy News Source Registry
+# Bias ratings sourced from AllSides Media Bias Chart (https://www.allsides.com/media-bias/ratings)
+
+version: 1
+updated_at: "2025-01-04"
+
+sources:
+  # ============================================================================
+  # CENTER
+  # ============================================================================
+  - name: "Associated Press"
+    slug: "ap"
+    rss_url: "https://news.google.com/rss/search?q=when:24h+site:apnews.com+politics+OR+government+OR+congress+OR+president&ceid=US:en&hl=en-US&gl=US"
+    fetch_method: rss
+    column: politics
+    bias: center
+    active: true
+
+  - name: "Reuters"
+    slug: "reuters"
+    rss_url: "https://news.google.com/rss/search?q=when:24h+site:reuters.com+politics+OR+government+OR+world&ceid=US:en&hl=en-US&gl=US"
+    fetch_method: rss
+    column: politics
+    bias: center
+    active: true
+
+  - name: "NPR News"
+    slug: "npr"
+    rss_url: "https://feeds.npr.org/1001/rss.xml"
+    fetch_method: rss
+    column: politics
+    bias: center
+    active: true
+
+  - name: "PBS NewsHour"
+    slug: "pbs"
+    rss_url: "https://www.pbs.org/newshour/feeds/rss/headlines"
+    fetch_method: rss
+    column: politics
+    bias: center
+    active: true
+
+  - name: "BBC News"
+    slug: "bbc"
+    rss_url: "https://feeds.bbci.co.uk/news/world/rss.xml"
+    fetch_method: rss
+    column: politics
+    bias: center
+    active: true
+
+  - name: "USA Today"
+    slug: "usatoday"
+    rss_url: "https://news.google.com/rss/search?q=when:24h+site:usatoday.com+politics+OR+government+OR+congress+OR+election&ceid=US:en&hl=en-US&gl=US"
+    fetch_method: rss
+    column: politics
+    bias: center
+    active: true
+
+  # ============================================================================
+  # LEAN LEFT
+  # ============================================================================
+  - name: "New York Times"
+    slug: "nyt"
+    rss_url: "https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml"
+    fetch_method: rss
+    column: politics
+    bias: lean-left
+    active: true
+
+  - name: "Washington Post"
+    slug: "wapo"
+    rss_url: "https://feeds.washingtonpost.com/rss/national"
+    fetch_method: rss
+    column: politics
+    bias: lean-left
+    active: true
+
+  - name: "The Guardian US"
+    slug: "guardian"
+    rss_url: "https://www.theguardian.com/us-news/rss"
+    fetch_method: rss
+    column: politics
+    bias: lean-left
+    active: true
+
+  - name: "Politico"
+    slug: "politico"
+    rss_url: "https://rss.politico.com/politics-news.xml"
+    fetch_method: rss
+    column: politics
+    bias: lean-left
+    active: true
+
+  - name: "NBC News"
+    slug: "nbc"
+    rss_url: "https://feeds.nbcnews.com/nbcnews/public/news"
+    fetch_method: rss
+    column: politics
+    bias: lean-left
+    active: true
+
+  - name: "ABC News"
+    slug: "abc"
+    rss_url: "https://abcnews.go.com/abcnews/topstories"
+    fetch_method: rss
+    column: politics
+    bias: lean-left
+    active: true
+
+  # ============================================================================
+  # LEFT
+  # ============================================================================
+  - name: "MSNBC"
+    slug: "msnbc"
+    rss_url: "https://news.google.com/rss/search?q=when:24h+allinurl:msnbc.com&ceid=US:en&hl=en-US&gl=US"
+    fetch_method: rss
+    column: politics
+    bias: left
+    active: false  # Content lives on nbcnews.com, covered by NBC source
+
+  - name: "The Atlantic"
+    slug: "atlantic"
+    rss_url: "https://www.theatlantic.com/feed/all/"
+    fetch_method: rss
+    column: politics
+    bias: left
+    active: true
+
+  - name: "Vox"
+    slug: "vox"
+    rss_url: "https://www.vox.com/rss/index.xml"
+    fetch_method: rss
+    column: politics
+    bias: left
+    active: true
+
+  - name: "HuffPost"
+    slug: "huffpost"
+    rss_url: "https://www.huffpost.com/section/politics/feed"
+    fetch_method: rss
+    column: politics
+    bias: left
+    active: true
+
+  - name: "Democracy Now"
+    slug: "democracynow"
+    rss_url: "https://www.democracynow.org/democracynow.rss"
+    fetch_method: rss
+    column: politics
+    bias: left
+    active: true
+
+  - name: "The Intercept"
+    slug: "intercept"
+    rss_url: "https://theintercept.com/feed/?rss"
+    fetch_method: rss
+    column: politics
+    bias: left
+    active: true
+
+  # ============================================================================
+  # LEAN RIGHT
+  # ============================================================================
+  - name: "Wall Street Journal"
+    slug: "wsj"
+    rss_url: "https://feeds.a.dj.com/rss/RSSWorldNews.xml"
+    fetch_method: rss
+    column: politics
+    bias: lean-right
+    active: true
+
+  - name: "The Hill"
+    slug: "thehill"
+    rss_url: "https://thehill.com/feed/"
+    fetch_method: rss
+    column: politics
+    bias: lean-right
+    active: true
+
+  - name: "Washington Examiner"
+    slug: "washexaminer"
+    rss_url: "https://www.washingtonexaminer.com/section/news/feed"
+    fetch_method: rss
+    column: politics
+    bias: lean-right
+    active: true
+
+  - name: "New York Post"
+    slug: "nypost"
+    rss_url: "https://nypost.com/news/feed/"
+    fetch_method: rss
+    column: politics
+    bias: lean-right
+    active: true
+
+  - name: "Washington Times"
+    slug: "washtimes"
+    rss_url: "https://www.washingtontimes.com/rss/headlines/news/"
+    fetch_method: rss
+    column: politics
+    bias: lean-right
+    active: true
+
+  - name: "RealClearPolitics"
+    slug: "rcp"
+    rss_url: "https://www.realclearpolitics.com/index.xml"
+    fetch_method: rss
+    column: politics
+    bias: lean-right
+    active: true
+
+  # ============================================================================
+  # RIGHT
+  # ============================================================================
+  - name: "Fox News"
+    slug: "foxnews"
+    rss_url: "https://moxie.foxnews.com/google-publisher/politics.xml"
+    fetch_method: rss
+    column: politics
+    bias: right
+    active: true
+
+  - name: "Breitbart"
+    slug: "breitbart"
+    rss_url: "https://feeds.feedburner.com/breitbart"
+    fetch_method: rss
+    column: politics
+    bias: right
+    active: true
+
+  - name: "The Daily Wire"
+    slug: "dailywire"
+    rss_url: "https://www.dailywire.com/feeds/rss.xml"
+    fetch_method: rss
+    column: politics
+    bias: right
+    active: true
+
+  - name: "National Review"
+    slug: "nationalreview"
+    rss_url: "https://www.nationalreview.com/feed/"
+    fetch_method: rss
+    column: politics
+    bias: right
+    active: true
+
+  - name: "The Federalist"
+    slug: "federalist"
+    rss_url: "https://thefederalist.com/feed/"
+    fetch_method: rss
+    column: politics
+    bias: right
+    active: true
+
+  - name: "Newsmax"
+    slug: "newsmax"
+    rss_url: "https://www.newsmax.com/rss/Politics/1/"
+    fetch_method: rss
+    column: politics
+    bias: right
+    active: false  # Cloudflare blocking - may need alternative
+
+  # ============================================================================
+  # TECH
+  # ============================================================================
+  - name: "Ars Technica"
+    slug: "arstechnica"
+    rss_url: "https://feeds.arstechnica.com/arstechnica/index"
+    fetch_method: rss
+    column: tech
+    bias: center
+    active: true
+
+  - name: "TechCrunch"
+    slug: "techcrunch"
+    rss_url: "https://techcrunch.com/feed/"
+    fetch_method: rss
+    column: tech
+    bias: lean-left
+    active: true
+
+  - name: "Wired"
+    slug: "wired"
+    rss_url: "https://www.wired.com/feed/rss"
+    fetch_method: rss
+    column: tech
+    bias: lean-left
+    active: true
+
+  - name: "The Verge"
+    slug: "verge"
+    rss_url: "https://www.theverge.com/rss/index.xml"
+    fetch_method: rss
+    column: tech
+    bias: lean-left
+    active: true
+
+  # ============================================================================
+  # MONEY / BUSINESS
+  # ============================================================================
+  - name: "Bloomberg"
+    slug: "bloomberg"
+    rss_url: "https://feeds.bloomberg.com/markets/news.rss"
+    fetch_method: rss
+    column: money
+    bias: center
+    active: true
+
+  - name: "CNBC"
+    slug: "cnbc"
+    rss_url: "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=100003114"
+    fetch_method: rss
+    column: money
+    bias: center
+    active: true
+
+  - name: "Financial Times"
+    slug: "ft"
+    rss_url: "https://www.ft.com/rss/home"
+    fetch_method: rss
+    column: money
+    bias: center
+    active: true
+
+  - name: "MarketWatch"
+    slug: "marketwatch"
+    rss_url: "https://feeds.marketwatch.com/marketwatch/topstories/"
+    fetch_method: rss
+    column: money
+    bias: center
+    active: true
+
+  # ============================================================================
+  # SPORTS
+  # ============================================================================
+  - name: "ESPN"
+    slug: "espn"
+    rss_url: "https://www.espn.com/espn/rss/news"
+    fetch_method: rss
+    column: sports
+    bias: center
+    active: true
+
+  - name: "CBS Sports"
+    slug: "cbssports"
+    rss_url: "https://www.cbssports.com/rss/headlines/"
+    fetch_method: rss
+    column: sports
+    bias: center
+    active: true
+
+  - name: "The Athletic"
+    slug: "athletic"
+    rss_url: "https://theathletic.com?rss"
+    fetch_method: rss
+    column: sports
+    bias: center
+    active: false  # Malformed XML in feed
+
+  # ============================================================================
+  # LIFESTYLE
+  # ============================================================================
+  - name: "NPR Life Kit"
+    slug: "npr-lifekit"
+    rss_url: "https://feeds.npr.org/510338/podcast.xml"
+    fetch_method: rss
+    column: lifestyle
+    bias: center
+    active: true
+
+  - name: "NYT Style"
+    slug: "nyt-style"
+    rss_url: "https://rss.nytimes.com/services/xml/rss/nyt/FashionandStyle.xml"
+    fetch_method: rss
+    column: lifestyle
+    bias: lean-left
+    active: true
