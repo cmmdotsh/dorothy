@@ -105,6 +105,22 @@ def register_routes(app: FastAPI) -> None:
             },
         )
 
+    @app.get("/about", response_class=HTMLResponse)
+    async def about_page(request: Request):
+        """About this site page."""
+        templates = request.app.state.templates
+
+        return templates.TemplateResponse(
+            "about.html",
+            {
+                "request": request,
+                "columns": COLUMNS,
+                "bias_colors": BIAS_COLORS,
+                "page": "about",
+                "dateline": datetime.now(timezone.utc).strftime("%A, %B %-d, %Y"),
+            },
+        )
+
     # API Endpoints
 
     @app.get("/api/columns")

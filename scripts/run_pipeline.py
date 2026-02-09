@@ -30,6 +30,7 @@ from src.clustering import StoryGrouper
 from src.synthesis import LLMClient, StorySummarizer
 from src.embeddings import EmbeddingClient
 from src.embeddings.generator import generate_embeddings
+from scripts.render_static import StaticSiteGenerator
 
 structlog.configure(
     processors=[
@@ -124,7 +125,7 @@ def run_synthesis(
         min_samples=2,
         max_cluster_size=30,
     )
-    stories = grouper.get_stories_for_column(column, size=500)
+    stories = grouper.get_stories_for_column(column, size=2000)
 
     # Filter to multi-source stories primarily about this column
     multi_source = []
@@ -155,10 +156,48 @@ def run_synthesis(
     return len(results)
 
 
+def run_render_deploy() -> None:
+    """Render static site and deploy to S3 if configured."""
+    from pathlib import Path
+    import os
+
+    output_dir = Path("output")
+
+    # Render
+    console.print("\n[dim]Step 4: Rendering static site...[/dim]")
+    generator = StaticSiteGenerator(output_dir)
+    generator.clean()
+    generator.generate()
+
+    # Deploy
+    bucket = os.environ.get("S3_BUCKET")
+    if not bucket:
+        console.print("[dim]  S3_BUCKET not set, skipping deploy[/dim]")
+        return
+
+    console.print("\n[dim]Step 5: Deploying to S3...[/dim]")
+    try:
+        from scripts.deploy_s3 import S3Deployer
+        cloudfront_id = os.environ.get("CLOUDFRONT_ID") or None
+        deployer = S3Deployer(
+            bucket=bucket,
+            source_dir=output_dir,
+            region=os.environ.get("AWS_REGION", "us-east-1"),
+            cloudfront_id=cloudfront_id,
+        )
+        result = deployer.sync()
+        console.print(f"[green]  Uploaded {result['uploaded']} files[/green]")
+        if cloudfront_id:
+            deployer.invalidate_cloudfront()
+    except Exception as e:
+        logger.error("deploy_failed", error=str(e))
+
+
 def run_pipeline_cycle(
     os_client: OpenSearchClient,
     llm_client: LLMClient,
     stories_per_column: Optional[int] = None,
+    render_and_deploy: bool = False,
 ) -> dict:
     """Run a full pipeline cycle: fetch → synthesize all columns."""
     start_time = datetime.now(timezone.utc)
@@ -190,6 +229,10 @@ def run_pipeline_cycle(
         synthesis_counts[column] = count
         console.print(f"[green]{count} stories[/green]")
 
+    # Step 4+5: Render and deploy
+    if render_and_deploy:
+        run_render_deploy()
+
     # Summary
     end_time = datetime.now(timezone.utc)
     duration = (end_time - start_time).total_seconds()
@@ -210,7 +253,7 @@ def run_pipeline_cycle(
     }
 
 
-def daemon_mode(interval_minutes: int, stories_per_column: int) -> None:
+def daemon_mode(interval_minutes: int, stories_per_column: int, render_and_deploy: bool = False) -> None:
     """Run pipeline on schedule."""
     console.print(Panel.fit(
         f"[bold green]Dorothy Pipeline Daemon[/bold green]\n"
@@ -251,11 +294,11 @@ def daemon_mode(interval_minutes: int, stories_per_column: int) -> None:
     console.print()
 
     # Run immediately
-    run_pipeline_cycle(os_client, llm_client, stories_per_column)
+    run_pipeline_cycle(os_client, llm_client, stories_per_column, render_and_deploy)
 
     # Schedule future runs
     def scheduled_run():
-        run_pipeline_cycle(os_client, llm_client, stories_per_column)
+        run_pipeline_cycle(os_client, llm_client, stories_per_column, render_and_deploy)
 
     schedule.every(interval_minutes).minutes.do(scheduled_run)
 
@@ -296,6 +339,11 @@ def main() -> None:
         action="store_true",
         help="Run once and exit (don't loop)",
     )
+    parser.add_argument(
+        "--publish",
+        action="store_true",
+        help="Render static site and deploy to S3 after each cycle",
+    )
 
     args = parser.parse_args()
 
@@ -321,11 +369,11 @@ def main() -> None:
         )
 
         try:
-            run_pipeline_cycle(os_client, llm_client, args.stories)
+            run_pipeline_cycle(os_client, llm_client, args.stories, args.publish)
         finally:
             llm_client.close()
     else:
-        daemon_mode(args.interval, args.stories)
+        daemon_mode(args.interval, args.stories, args.publish)
 
 
 if __name__ == "__main__":

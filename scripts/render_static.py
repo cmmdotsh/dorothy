@@ -150,6 +150,12 @@ class StaticSiteGenerator:
             self.write_page(self.output_dir / "column" / column / "index.html", html)
             console.print(f"[green]  Rendered column/{column}/index.html ({len(stories)} stories)[/green]")
 
+    def render_about_page(self) -> None:
+        """Render the about page."""
+        html = self.render_template("about.html", {"page": "about"})
+        self.write_page(self.output_dir / "about" / "index.html", html)
+        console.print("[green]  Rendered about/index.html[/green]")
+
     def render_story_pages(self) -> int:
         """Render all individual story pages. Returns count."""
         all_stories = self.get_all_stories()
@@ -180,6 +186,7 @@ class StaticSiteGenerator:
         self.copy_static_assets()
         self.render_front_page()
         self.render_column_pages()
+        self.render_about_page()
         story_count = self.render_story_pages()
 
         duration = (datetime.now(timezone.utc) - start).total_seconds()

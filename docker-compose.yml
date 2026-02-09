@@ -37,19 +37,12 @@ services:
       opensearch:
         condition: service_healthy
 
-  # Pipeline: Fetch -> Embed -> Cluster -> Synthesize -> Render -> Deploy
+  # Pipeline: Fetch -> Embed -> Cluster -> Synthesize -> Render -> Deploy (hourly)
   pipeline:
     build: .
     container_name: dorothy-pipeline
-    command: >
-      sh -c "
-        echo 'Starting Dorothy pipeline...' &&
-        python -m scripts.run_pipeline --once &&
-        echo 'Rendering static site...' &&
-        python -m scripts.render_static --clean &&
-        echo 'Deploying to S3...' &&
-        python -m scripts.deploy_s3
-      "
+    restart: unless-stopped
+    command: python -m scripts.run_pipeline --interval 60 --publish
     environment:
       # OpenSearch (use container name for host)
       - OPENSEARCH_HOST=opensearch

@@ -737,6 +737,38 @@ img {
 }
 
 /* ========================================
+   ABOUT PAGE
+======================================== */
+.about-page {
+    max-width: 800px;
+    margin: 0 auto;
+    background: var(--bg-secondary);
+    padding: 2rem;
+    border: 1px solid var(--border-color);
+}
+
+.about-page .section-title {
+    font-size: 2rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 2rem;
+    padding-bottom: 1rem;
+    border-bottom: 3px solid var(--border-dark);
+}
+
+.about-content p {
+    font-size: 1.05rem;
+    line-height: 1.75;
+    margin-bottom: 1.25rem;
+    color: var(--text-secondary);
+}
+
+.about-content p:last-child {
+    margin-bottom: 0;
+}
+
+/* ========================================
    SITE FOOTER
 ======================================== */
 .site-footer {

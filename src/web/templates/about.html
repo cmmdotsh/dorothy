@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+
+{% block title %}About{% endblock %}
+
+{% block content %}
+<section class="about-page">
+    <h2 class="section-title">About This Site</h2>
+
+    <div class="about-content">
+        <p>This is a pet project of mine that I have used as a place to play with Machine Learning, or "ML" algorithms. This site was synthesized from a pipeline that starts with a RSS scraping suite and ends with a Qwen3 Next 80B synthesis of an "event." This "event" is calculated using the HDBSCAN (Hierarchical Density-Based Spatial Clustering of Applications with Noise) algorithm to cluster articles using vectors created for each of them. These clustered articles are then "headlined" by either putting the entire cluster of articles in the context of Qwen3 Next or a sampling if it's bigger than the available context to use. The cluster is then summarized, and the LLM is instructed to break down differences of opinions from these articles. These articles are labeled with political lean metadata gathered from AllSides Media.</p>
+
+        <p>All articles on this site are <b>generated</b> and should be treated as such; verify by following the article clusters at the bottom and read the sources if you would like to verify things. Personally, it does a decent job, but as they say, the "devil is in the details."</p>
+
+        <p>The site is named "Dorothy" after Dorothy Thompson, a prominent journalist from WWII times.</p>
+    </div>
+</section>
+{% endblock %}
