@@ -499,7 +499,11 @@ class OpenSearchClient:
         body = {
             "query": query,
             "size": limit,
-            "sort": [{"generated_at": {"order": "desc"}}],
+            "sort": [
+                {"source_count": {"order": "desc"}},  # Most sources first
+                {"article_count": {"order": "desc"}},  # Then most articles
+                {"generated_at": {"order": "desc"}},  # Then newest
+            ],
         }
 
         try:

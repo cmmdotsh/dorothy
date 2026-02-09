@@ -1,0 +1,15 @@
+# Dorothy Terraform Configuration
+# Copy to terraform.tfvars and customize
+
+aws_region  = "us-east-1"
+environment = "prod"
+
+# Domain configuration
+domain_name = "dorothy.cmm.sh"
+bucket_name = "dorothy-cmm-sh"
+
+# Route53 configuration
+# Set use_route53 = true to auto-lookup the zone and create DNS records
+# Set use_route53 = false to manage DNS manually
+use_route53 = true
+zone_domain = "cmm.sh"

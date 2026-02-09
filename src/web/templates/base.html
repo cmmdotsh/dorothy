@@ -13,6 +13,11 @@
                 <h1>Dorothy</h1>
                 <span class="tagline">The Newspaper of Averages</span>
             </a>
+            <hr class="dateline-rule">
+            <div class="dateline">
+                <span>{{ dateline }}</span>
+                <span>Vol. 1</span>
+            </div>
             <nav class="main-nav">
                 {% for col in columns %}
                 <a href="/column/{{ col }}" class="nav-link {% if column == col %}active{% endif %}">

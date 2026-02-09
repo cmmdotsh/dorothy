@@ -1,4 +1,5 @@
 services:
+  # OpenSearch for article storage and k-NN clustering
   opensearch:
     image: opensearchproject/opensearch:2.11.1
     container_name: dorothy-opensearch
@@ -19,14 +20,123 @@ services:
       timeout: 5s
       retries: 10
 
+  # OpenSearch Dashboards (optional, for debugging)
   opensearch-dashboards:
     image: opensearchproject/opensearch-dashboards:2.11.1
     container_name: dorothy-dashboards
+    profiles:
+      - debug
     ports:
       - "5601:5601"
     environment:
       - OPENSEARCH_HOSTS=["http://opensearch:9200"]
       - DISABLE_SECURITY_DASHBOARDS_PLUGIN=true
+    networks:
+      - dorothy-net
+    depends_on:
+      opensearch:
+        condition: service_healthy
+
+  # Pipeline: Fetch -> Embed -> Cluster -> Synthesize -> Render -> Deploy
+  pipeline:
+    build: .
+    container_name: dorothy-pipeline
+    command: >
+      sh -c "
+        echo 'Starting Dorothy pipeline...' &&
+        python -m scripts.run_pipeline --once &&
+        echo 'Rendering static site...' &&
+        python -m scripts.render_static --clean &&
+        echo 'Deploying to S3...' &&
+        python -m scripts.deploy_s3
+      "
+    environment:
+      # OpenSearch (use container name for host)
+      - OPENSEARCH_HOST=opensearch
+      - OPENSEARCH_PORT=9200
+      - OPENSEARCH_USE_SSL=false
+      # LLM service (your local LM Studio)
+      - LLM_BASE_URL=${LLM_BASE_URL:-http://host.docker.internal:1234}
+      - LLM_MODEL=${LLM_MODEL:-qwen/qwen3-next-80b}
+      - LLM_TEMPERATURE=0.3
+      - LLM_MAX_TOKENS=1500
+      # Embedding service
+      - EMBEDDING_BASE_URL=${EMBEDDING_BASE_URL:-http://host.docker.internal:1234}
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-text-embedding-mxbai-embed-large-v1}
+      # S3 deployment
+      - S3_BUCKET=${S3_BUCKET}
+      - AWS_REGION=${AWS_REGION:-us-east-1}
+      - CLOUDFRONT_ID=${CLOUDFRONT_ID:-}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-}
+    volumes:
+      # Mount output for debugging
+      - ./output:/app/output
+      # Mount AWS credentials if using file-based auth
+      - ${HOME}/.aws:/root/.aws:ro
+    networks:
+      - dorothy-net
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      opensearch:
+        condition: service_healthy
+
+  # One-shot pipeline run (for testing)
+  pipeline-once:
+    build: .
+    container_name: dorothy-pipeline-once
+    profiles:
+      - manual
+    command: python -m scripts.run_pipeline --once
+    environment:
+      - OPENSEARCH_HOST=opensearch
+      - OPENSEARCH_PORT=9200
+      - OPENSEARCH_USE_SSL=false
+      - LLM_BASE_URL=${LLM_BASE_URL:-http://host.docker.internal:1234}
+      - LLM_MODEL=${LLM_MODEL:-qwen/qwen3-next-80b}
+      - EMBEDDING_BASE_URL=${EMBEDDING_BASE_URL:-http://host.docker.internal:1234}
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-text-embedding-mxbai-embed-large-v1}
+    networks:
+      - dorothy-net
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      opensearch:
+        condition: service_healthy
+
+  # Static site render only (for testing)
+  render:
+    build: .
+    container_name: dorothy-render
+    profiles:
+      - manual
+    command: python -m scripts.render_static --clean
+    environment:
+      - OPENSEARCH_HOST=opensearch
+      - OPENSEARCH_PORT=9200
+      - OPENSEARCH_USE_SSL=false
+    volumes:
+      - ./output:/app/output
+    networks:
+      - dorothy-net
+    depends_on:
+      opensearch:
+        condition: service_healthy
+
+  # Local web server (for testing before S3 deploy)
+  web:
+    build: .
+    container_name: dorothy-web
+    profiles:
+      - dev
+    command: python -m scripts.run_server --host 0.0.0.0
+    ports:
+      - "8000:8000"
+    environment:
+      - OPENSEARCH_HOST=opensearch
+      - OPENSEARCH_PORT=9200
+      - OPENSEARCH_USE_SSL=false
     networks:
       - dorothy-net
     depends_on:

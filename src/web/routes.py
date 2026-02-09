@@ -1,5 +1,6 @@
 """Route handlers for Dorothy web server."""
 
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import FastAPI, Request, HTTPException
@@ -52,6 +53,7 @@ def register_routes(app: FastAPI) -> None:
                 "columns": COLUMNS,
                 "stories_by_column": all_stories,
                 "bias_colors": BIAS_COLORS,
+                "dateline": datetime.now(timezone.utc).strftime("%A, %B %-d, %Y"),
             },
         )
 
@@ -77,6 +79,7 @@ def register_routes(app: FastAPI) -> None:
                 "columns": COLUMNS,
                 "stories": stories,
                 "bias_colors": BIAS_COLORS,
+                "dateline": datetime.now(timezone.utc).strftime("%A, %B %-d, %Y"),
             },
         )
 
@@ -98,6 +101,7 @@ def register_routes(app: FastAPI) -> None:
                 "story": story,
                 "columns": COLUMNS,
                 "bias_colors": BIAS_COLORS,
+                "dateline": datetime.now(timezone.utc).strftime("%A, %B %-d, %Y"),
             },
         )
 

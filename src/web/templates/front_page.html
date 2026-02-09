@@ -4,42 +4,116 @@
 
 {% block content %}
 <section class="front-page">
-    <h2 class="section-title">Today's Top Stories</h2>
+    {% set lead_story = stories_by_column.get('politics', [])[0] if stories_by_column.get('politics') else none %}
 
-    <div class="columns-grid">
+    {# ── Above the Fold ── #}
+    <div class="above-fold">
+        {# Lead Story (left column ~60%) #}
+        {% if lead_story %}
+        <article class="lead-story">
+            {% if lead_story.hero_image_url %}
+            <div class="lead-image">
+                <a href="/story/{{ lead_story.story_id }}">
+                    <img src="{{ lead_story.hero_image_url }}" alt="{{ lead_story.generated_headline }}" loading="lazy">
+                </a>
+            </div>
+            {% endif %}
+            <h2 class="lead-headline">
+                <a href="/story/{{ lead_story.story_id }}">{{ lead_story.generated_headline }}</a>
+            </h2>
+            {% if lead_story.summary %}
+            <p class="lead-summary">{{ lead_story.summary[:300] }}{% if lead_story.summary|length > 300 %}...{% endif %}</p>
+            {% endif %}
+            <div class="lead-meta">
+                <span class="source-count">{{ lead_story.source_count }} sources</span>
+                <span class="sep">&bull;</span>
+                <span class="article-count">{{ lead_story.article_count }} articles</span>
+                {% if lead_story.bias_coverage %}
+                <span class="sep">&bull;</span>
+                <span class="bias-indicators">
+                    {% for bias in ['left', 'lean-left', 'center', 'lean-right', 'right'] %}
+                        {% if bias in lead_story.bias_coverage %}
+                        <span class="bias-dot" style="background: {{ bias_colors[bias] }}" title="{{ bias|title }}: {{ lead_story.bias_coverage[bias] }}"></span>
+                        {% endif %}
+                    {% endfor %}
+                </span>
+                {% endif %}
+            </div>
+            <a href="/story/{{ lead_story.story_id }}" class="read-full">Read full coverage &rarr;</a>
+        </article>
+        {% endif %}
+
+        {# Sidebar - Secondary Stories (right column ~40%) #}
+        <aside class="sidebar-stories">
+            {% for col_name in ['tech', 'money', 'sports'] %}
+                {% set col_stories = stories_by_column.get(col_name, []) %}
+                {% if col_stories %}
+                {% set story = col_stories[0] %}
+                <article class="sidebar-story">
+                    {% if story.hero_image_url and not loop.last %}
+                    <a href="/story/{{ story.story_id }}" class="sidebar-image">
+                        <img src="{{ story.hero_image_url }}" alt="{{ story.generated_headline }}" loading="lazy">
+                    </a>
+                    {% endif %}
+                    <div class="sidebar-content">
+                        <span class="column-label">{{ col_name|title }}</span>
+                        <h3 class="sidebar-headline">
+                            <a href="/story/{{ story.story_id }}">{{ story.generated_headline }}</a>
+                        </h3>
+                        <div class="story-meta">
+                            <span>{{ story.source_count }} sources</span>
+                            {% if story.bias_coverage %}
+                            <span class="bias-indicators">
+                                {% for bias in ['left', 'lean-left', 'center', 'lean-right', 'right'] %}
+                                    {% if bias in story.bias_coverage %}
+                                    <span class="bias-dot" style="background: {{ bias_colors[bias] }}"></span>
+                                    {% endif %}
+                                {% endfor %}
+                            </span>
+                            {% endif %}
+                        </div>
+                    </div>
+                </article>
+                {% if not loop.last %}<hr class="sidebar-divider">{% endif %}
+                {% endif %}
+            {% endfor %}
+        </aside>
+    </div>
+
+    {# ── Below the Fold - Section Blocks ── #}
+    <hr class="fold-rule">
+    <div class="section-grid">
         {% for col in columns %}
-        <div class="column-section">
-            <h3 class="column-header">
+        <section class="section-block">
+            <h3 class="section-header">
                 <a href="/column/{{ col }}">{{ col|title }}</a>
             </h3>
 
-            {% if stories_by_column.get(col) %}
-                {% for story in stories_by_column[col] %}
-                <article class="story-card">
-                    <h4 class="story-headline">
-                        <a href="/story/{{ story.story_id }}">{{ story.generated_headline }}</a>
-                    </h4>
-                    <div class="story-meta">
-                        <span class="source-count">{{ story.source_count }} sources</span>
-                        <span class="article-count">{{ story.article_count }} articles</span>
-                    </div>
-                    {% if story.bias_coverage %}
-                    <div class="bias-indicators">
-                        {% for bias in ['left', 'lean-left', 'center', 'lean-right', 'right'] %}
-                            {% if bias in story.bias_coverage %}
-                            <span class="bias-dot" style="background: {{ bias_colors[bias] }}" title="{{ bias|title }}: {{ story.bias_coverage[bias] }} articles"></span>
-                            {% endif %}
-                        {% endfor %}
-                    </div>
-                    {% endif %}
-                </article>
-                {% endfor %}
+            {% if col == 'politics' %}
+                {% set section_stories = stories_by_column.get(col, [])[1:] %}
+            {% elif col in ['tech', 'money', 'sports'] %}
+                {% set section_stories = stories_by_column.get(col, [])[1:] %}
             {% else %}
-                <p class="no-stories">No stories available</p>
+                {% set section_stories = stories_by_column.get(col, []) %}
             {% endif %}
 
-            <a href="/column/{{ col }}" class="view-all">View all {{ col }} stories →</a>
-        </div>
+            {% if section_stories and section_stories[0].hero_image_url %}
+            <a href="/story/{{ section_stories[0].story_id }}" class="section-thumb">
+                <img src="{{ section_stories[0].hero_image_url }}" alt="" loading="lazy">
+            </a>
+            {% endif %}
+
+            <ul class="section-headlines">
+                {% for story in section_stories[:3] %}
+                <li>
+                    <a href="/story/{{ story.story_id }}">{{ story.generated_headline }}</a>
+                    <span class="story-meta"><span>{{ story.source_count }} sources</span></span>
+                </li>
+                {% endfor %}
+            </ul>
+
+            <a href="/column/{{ col }}" class="section-more">More {{ col }} &rarr;</a>
+        </section>
         {% endfor %}
     </div>
 </section>
