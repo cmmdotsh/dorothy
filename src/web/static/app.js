@@ -59,3 +59,28 @@ document.addEventListener('keydown', e => {
     }
   }
 });
+
+// Column page sort controls
+const sortControls = document.querySelector('.sort-controls');
+if (sortControls) {
+  const container = document.getElementById('stories-list');
+  const buttons = sortControls.querySelectorAll('.sort-btn');
+
+  const sortFns = {
+    hotness: (a, b) => parseFloat(b.dataset.hotness || 0) - parseFloat(a.dataset.hotness || 0),
+    newest: (a, b) => (b.dataset.generatedAt || '').localeCompare(a.dataset.generatedAt || ''),
+    sources: (a, b) => parseInt(b.dataset.sourceCount || 0) - parseInt(a.dataset.sourceCount || 0),
+  };
+
+  buttons.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const sortKey = btn.dataset.sort;
+      const cards = Array.from(container.querySelectorAll('.story-card'));
+      cards.sort(sortFns[sortKey]);
+      cards.forEach(card => container.appendChild(card));
+
+      buttons.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+    });
+  });
+}

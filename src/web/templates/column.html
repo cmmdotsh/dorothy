@@ -7,9 +7,18 @@
     <h2 class="section-title">{{ column|title }}</h2>
 
     {% if stories %}
-    <div class="stories-list">
+    <div class="sort-controls">
+        <span class="sort-label">Sort by:</span>
+        <button class="sort-btn active" data-sort="hotness">Hottest</button>
+        <button class="sort-btn" data-sort="newest">Newest</button>
+        <button class="sort-btn" data-sort="sources">Most Sources</button>
+    </div>
+    <div class="stories-list" id="stories-list">
         {% for story in stories %}
-        <article class="story-card story-card-full">
+        <article class="story-card story-card-full"
+                 data-hotness="{{ story.hotness_score|default(0) }}"
+                 data-generated-at="{{ story.generated_at|default('') }}"
+                 data-source-count="{{ story.source_count|default(0) }}">
             <h3 class="story-headline">
                 <a href="/story/{{ story.story_id }}">{{ story.generated_headline }}</a>
             </h3>

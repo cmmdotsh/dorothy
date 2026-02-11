@@ -28,6 +28,12 @@ def get_stories_for_column(column: str, limit: int = 10) -> list[dict]:
     return os_client.get_syntheses(column=column, limit=limit)
 
 
+def _get_edition() -> int:
+    """Get the current edition number."""
+    os_client = get_os_client()
+    return os_client.get_edition() or 1
+
+
 def register_routes(app: FastAPI) -> None:
     """Register all routes on the app."""
 
@@ -39,7 +45,6 @@ def register_routes(app: FastAPI) -> None:
         all_stories = {}
         for column in COLUMNS:
             try:
-                # Get top 3 stories per column from pre-synthesized storage
                 stories = get_stories_for_column(column, limit=3)
                 all_stories[column] = stories
             except Exception as e:
@@ -54,6 +59,7 @@ def register_routes(app: FastAPI) -> None:
                 "stories_by_column": all_stories,
                 "bias_colors": BIAS_COLORS,
                 "dateline": datetime.now(timezone.utc).strftime("%A, %B %-d, %Y"),
+                "edition": _get_edition(),
             },
         )
 
@@ -80,6 +86,7 @@ def register_routes(app: FastAPI) -> None:
                 "stories": stories,
                 "bias_colors": BIAS_COLORS,
                 "dateline": datetime.now(timezone.utc).strftime("%A, %B %-d, %Y"),
+                "edition": _get_edition(),
             },
         )
 
@@ -102,6 +109,7 @@ def register_routes(app: FastAPI) -> None:
                 "columns": COLUMNS,
                 "bias_colors": BIAS_COLORS,
                 "dateline": datetime.now(timezone.utc).strftime("%A, %B %-d, %Y"),
+                "edition": _get_edition(),
             },
         )
 
@@ -118,6 +126,7 @@ def register_routes(app: FastAPI) -> None:
                 "bias_colors": BIAS_COLORS,
                 "page": "about",
                 "dateline": datetime.now(timezone.utc).strftime("%A, %B %-d, %Y"),
+                "edition": _get_edition(),
             },
         )
 

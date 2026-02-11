@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 import numpy as np
+from dateutil import parser as dateutil_parser
 from sklearn.metrics.pairwise import cosine_distances
 import structlog
 
@@ -63,6 +64,11 @@ class SynthesizedStory:
     generated_at: datetime = field(default_factory=_utcnow)
     articles: list[dict] = field(default_factory=list)
     hero_image_url: Optional[str] = None
+    article_urls: list[str] = field(default_factory=list)
+    edition: int = 1
+    is_current: bool = True
+    hotness_score: float = 0.0
+    median_pub_date: Optional[str] = None
 
     @property
     def summary(self) -> str:
@@ -83,6 +89,11 @@ class SynthesizedStory:
             "generated_at": self.generated_at.isoformat(),
             "articles": self.articles,
             "hero_image_url": self.hero_image_url,
+            "article_urls": self.article_urls,
+            "edition": self.edition,
+            "is_current": self.is_current,
+            "hotness_score": self.hotness_score,
+            "median_pub_date": self.median_pub_date,
         }
 
     def to_markdown(self) -> str:
@@ -104,6 +115,48 @@ class SynthesizedStory:
 **Bias Coverage:** {bias_str}
 **Articles:** {self.article_count}
 """
+
+
+def compute_hotness(articles: list[dict], now: Optional[datetime] = None) -> tuple[float, Optional[str]]:
+    """Compute a hotness score and median pub_date for a set of articles.
+
+    hotness = article_count / max(1, hours_since_median_pub_date) * source_diversity_bonus
+
+    Returns (hotness_score, median_pub_date_iso).
+    """
+    if now is None:
+        now = _utcnow()
+
+    pub_dates = []
+    for a in articles:
+        pd = a.get("pub_date")
+        if not pd:
+            continue
+        if isinstance(pd, str):
+            try:
+                pd = dateutil_parser.isoparse(pd)
+            except (ValueError, TypeError):
+                continue
+        if pd.tzinfo is None:
+            pd = pd.replace(tzinfo=timezone.utc)
+        pub_dates.append(pd)
+
+    if not pub_dates:
+        return (0.0, None)
+
+    pub_dates.sort()
+    median_idx = len(pub_dates) // 2
+    median_date = pub_dates[median_idx]
+
+    hours_since_median = max(1.0, (now - median_date).total_seconds() / 3600)
+    article_count = len(articles)
+
+    unique_biases = len(set(a.get("source_bias", "unknown") for a in articles))
+    source_diversity_bonus = 1.0 + 0.1 * max(0, unique_biases - 1)
+
+    hotness = (article_count / hours_since_median) * source_diversity_bonus
+
+    return (round(hotness, 4), median_date.isoformat())
 
 
 class StorySummarizer:
@@ -439,6 +492,8 @@ class StorySummarizer:
             sources_used = list(set(a.get("source_slug", "") for a in story.articles))
             article_refs = self._build_article_refs(story.articles)
             hero_image = self._pick_hero_image(story.articles)
+            article_urls = sorted(str(a.get("url", "")) for a in story.articles if a.get("url"))
+            hotness, median_pub = compute_hotness(story.articles)
 
             result = SynthesizedStory(
                 story_id=story.id,
@@ -451,6 +506,9 @@ class StorySummarizer:
                 article_count=len(story.articles),
                 articles=article_refs,
                 hero_image_url=hero_image,
+                article_urls=article_urls,
+                hotness_score=hotness,
+                median_pub_date=median_pub,
             )
 
             logger.info(

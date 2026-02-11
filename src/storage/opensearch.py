@@ -13,6 +13,7 @@ logger = structlog.get_logger(__name__)
 
 INDEX_PREFIX = "dorothy-articles"
 SYNTHESIS_INDEX = "dorothy-synthesis"
+METADATA_INDEX = "dorothy-metadata"
 
 
 def utcnow() -> datetime:
@@ -43,6 +44,12 @@ SYNTHESIS_MAPPING = {
             "source_count": {"type": "integer"},
             "generated_at": {"type": "date"},
             "hero_image_url": {"type": "keyword"},
+            "article_urls": {"type": "keyword"},
+            "edition": {"type": "integer"},
+            "is_current": {"type": "boolean"},
+            "superseded_by": {"type": "keyword"},
+            "hotness_score": {"type": "float"},
+            "median_pub_date": {"type": "date"},
             "articles": {
                 "type": "nested",
                 "properties": {
@@ -432,6 +439,12 @@ class OpenSearchClient:
             "generated_at": synthesis.get("generated_at", utcnow().isoformat()),
             "hero_image_url": synthesis.get("hero_image_url"),
             "articles": synthesis.get("articles", []),
+            "article_urls": synthesis.get("article_urls", []),
+            "edition": synthesis.get("edition", 1),
+            "is_current": synthesis.get("is_current", True),
+            "superseded_by": synthesis.get("superseded_by"),
+            "hotness_score": synthesis.get("hotness_score", 0.0),
+            "median_pub_date": synthesis.get("median_pub_date"),
         }
 
         try:
@@ -469,6 +482,12 @@ class OpenSearchClient:
                 "generated_at": synthesis.get("generated_at", utcnow().isoformat()),
                 "hero_image_url": synthesis.get("hero_image_url"),
                 "articles": synthesis.get("articles", []),
+                "article_urls": synthesis.get("article_urls", []),
+                "edition": synthesis.get("edition", 1),
+                "is_current": synthesis.get("is_current", True),
+                "superseded_by": synthesis.get("superseded_by"),
+                "hotness_score": synthesis.get("hotness_score", 0.0),
+                "median_pub_date": synthesis.get("median_pub_date"),
             }
             actions.append({
                 "_index": SYNTHESIS_INDEX,
@@ -491,23 +510,45 @@ class OpenSearchClient:
         self,
         column: Optional[str] = None,
         limit: int = 20,
+        include_historical: bool = False,
     ) -> list[dict]:
-        """Get synthesized stories, optionally filtered by column."""
+        """Get synthesized stories, optionally filtered by column.
+
+        By default only returns current (non-superseded) syntheses.
+        """
         try:
             if not self.client.indices.exists(index=SYNTHESIS_INDEX):
                 return []
         except Exception:
             return []
 
-        query = {"term": {"column": column}} if column else {"match_all": {}}
+        must_clauses = []
+        if column:
+            must_clauses.append({"term": {"column": column}})
+        if not include_historical:
+            # Match docs where is_current=true OR is_current doesn't exist (legacy docs)
+            must_clauses.append({
+                "bool": {
+                    "should": [
+                        {"term": {"is_current": True}},
+                        {"bool": {"must_not": [{"exists": {"field": "is_current"}}]}},
+                    ],
+                    "minimum_should_match": 1,
+                }
+            })
+
+        if must_clauses:
+            query = {"bool": {"must": must_clauses}}
+        else:
+            query = {"match_all": {}}
 
         body = {
             "query": query,
             "size": limit,
             "sort": [
-                {"generated_at": {"order": "desc"}},  # Newest first
-                {"article_count": {"order": "desc"}},  # Then most coverage
-                {"source_count": {"order": "desc"}},  # Then most sources
+                {"hotness_score": {"order": "desc", "missing": "_last"}},
+                {"generated_at": {"order": "desc"}},
+                {"article_count": {"order": "desc"}},
             ],
         }
 
@@ -530,16 +571,25 @@ class OpenSearchClient:
             return None
 
     def get_synthesis_count(self, column: Optional[str] = None) -> int:
-        """Get count of syntheses, optionally by column."""
+        """Get count of current syntheses, optionally by column."""
         try:
             if not self.client.indices.exists(index=SYNTHESIS_INDEX):
                 return 0
 
+            must_clauses = [{
+                "bool": {
+                    "should": [
+                        {"term": {"is_current": True}},
+                        {"bool": {"must_not": [{"exists": {"field": "is_current"}}]}},
+                    ],
+                    "minimum_should_match": 1,
+                }
+            }]
             if column:
-                body = {"query": {"term": {"column": column}}}
-                response = self.client.count(index=SYNTHESIS_INDEX, body=body)
-            else:
-                response = self.client.count(index=SYNTHESIS_INDEX)
+                must_clauses.append({"term": {"column": column}})
+
+            body = {"query": {"bool": {"must": must_clauses}}}
+            response = self.client.count(index=SYNTHESIS_INDEX, body=body)
             return response["count"]
         except Exception:
             return 0
@@ -562,3 +612,114 @@ class OpenSearchClient:
         except Exception as e:
             logger.error("clear_syntheses_failed", error=str(e))
             return 0
+
+    # Synthesis deduplication methods
+
+    def find_overlapping_synthesis(self, article_urls: list[str]) -> Optional[dict]:
+        """Find an existing current synthesis whose articles overlap significantly.
+
+        Uses a terms query on article_urls, then computes Jaccard similarity
+        in Python. Returns the best match (highest overlap) or None.
+        """
+        try:
+            if not self.client.indices.exists(index=SYNTHESIS_INDEX):
+                return None
+
+            body = {
+                "query": {
+                    "bool": {
+                        "must": [
+                            {"terms": {"article_urls": article_urls}},
+                            {"term": {"is_current": True}},
+                        ]
+                    }
+                },
+                "size": 10,
+                "_source": ["story_id", "article_urls", "article_count", "generated_headline"],
+            }
+
+            response = self.client.search(index=SYNTHESIS_INDEX, body=body)
+            hits = response["hits"]["hits"]
+
+            if not hits:
+                return None
+
+            new_set = set(article_urls)
+            best_match = None
+            best_jaccard = 0.0
+
+            for hit in hits:
+                existing_urls = set(hit["_source"].get("article_urls", []))
+                if not existing_urls:
+                    continue
+                intersection = len(new_set & existing_urls)
+                union = len(new_set | existing_urls)
+                jaccard = intersection / union if union > 0 else 0.0
+
+                if jaccard > best_jaccard:
+                    best_jaccard = jaccard
+                    best_match = {**hit["_source"], "jaccard": jaccard}
+
+            return best_match
+
+        except Exception as e:
+            logger.error("find_overlapping_synthesis_failed", error=str(e))
+            return None
+
+    def mark_synthesis_historical(self, story_id: str, superseded_by: str) -> bool:
+        """Mark an existing synthesis as historical (superseded by a newer version)."""
+        try:
+            self.client.update(
+                index=SYNTHESIS_INDEX,
+                id=story_id,
+                body={"doc": {"is_current": False, "superseded_by": superseded_by}},
+            )
+            logger.info("synthesis_marked_historical", story_id=story_id, superseded_by=superseded_by)
+            return True
+        except Exception as e:
+            logger.error("mark_historical_failed", story_id=story_id, error=str(e))
+            return False
+
+    # Edition counter methods
+
+    def _ensure_metadata_index(self) -> None:
+        """Create metadata index if it doesn't exist."""
+        if not self.client.indices.exists(index=METADATA_INDEX):
+            self.client.indices.create(
+                index=METADATA_INDEX,
+                body={
+                    "settings": {"index": {"number_of_shards": 1, "number_of_replicas": 0}},
+                    "mappings": {
+                        "properties": {
+                            "edition": {"type": "integer"},
+                            "updated_at": {"type": "date"},
+                        }
+                    },
+                },
+            )
+
+    def get_edition(self) -> int:
+        """Get the current edition (pipeline run counter)."""
+        try:
+            self._ensure_metadata_index()
+            response = self.client.get(index=METADATA_INDEX, id="edition_counter")
+            return response["_source"].get("edition", 0)
+        except Exception:
+            return 0
+
+    def increment_edition(self) -> int:
+        """Increment and return the new edition number."""
+        try:
+            self._ensure_metadata_index()
+            current = self.get_edition()
+            new_edition = current + 1
+            self.client.index(
+                index=METADATA_INDEX,
+                id="edition_counter",
+                body={"edition": new_edition, "updated_at": utcnow().isoformat()},
+            )
+            logger.info("edition_incremented", edition=new_edition)
+            return new_edition
+        except Exception as e:
+            logger.error("increment_edition_failed", error=str(e))
+            return 1

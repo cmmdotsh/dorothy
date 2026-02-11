@@ -114,6 +114,10 @@ class StaticSiteGenerator:
             all_stories.extend(stories)
         return all_stories
 
+    def get_edition(self) -> int:
+        """Get the current edition number from OpenSearch."""
+        return self.os_client.get_edition()
+
     def render_template(self, template_name: str, context: dict) -> str:
         """Render a template with context."""
         template = self.env.get_template(template_name)
@@ -124,6 +128,7 @@ class StaticSiteGenerator:
             "bias_colors": BIAS_COLORS,
             "generated_at": now.isoformat(),
             "dateline": now.strftime("%A, %B %-d, %Y"),
+            "edition": context.get("edition") or self.get_edition() or 1,
         })
         return template.render(**context)
 

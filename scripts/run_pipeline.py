@@ -28,6 +28,7 @@ from src.models import Article
 from src.storage import OpenSearchClient
 from src.clustering import StoryGrouper
 from src.synthesis import LLMClient, StorySummarizer
+from src.synthesis.summarizer import compute_hotness
 from src.embeddings import EmbeddingClient
 from src.embeddings.generator import generate_embeddings
 from scripts.render_static import StaticSiteGenerator
@@ -116,9 +117,10 @@ def run_synthesis(
     os_client: OpenSearchClient,
     llm_client: LLMClient,
     column: str,
+    edition: int = 1,
     limit: Optional[int] = None,
 ) -> int:
-    """Synthesize stories for a column. Returns count of stories synthesized."""
+    """Synthesize stories for a column with deduplication. Returns count of stories synthesized."""
     try:
         grouper = StoryGrouper(
             os_client,
@@ -135,12 +137,50 @@ def run_synthesis(
 
         summarizer = StorySummarizer(llm_client)
         results = []
+        skipped = 0
 
         stories_to_process = multi_source[:limit] if limit else multi_source
         for story in stories_to_process:
             try:
+                # Extract article URLs for dedup check
+                cluster_urls = sorted(
+                    str(a.get("url", "")) for a in story.articles if a.get("url")
+                )
+
+                if cluster_urls:
+                    existing = os_client.find_overlapping_synthesis(cluster_urls)
+                    if existing:
+                        jaccard = existing.get("jaccard", 0)
+                        existing_urls = set(existing.get("article_urls", []))
+                        new_urls = set(cluster_urls) - existing_urls
+
+                        if jaccard > 0.8 and not new_urls:
+                            # Story unchanged — skip
+                            logger.info(
+                                "story_unchanged",
+                                story_id=story.id,
+                                existing_id=existing["story_id"],
+                                jaccard=round(jaccard, 2),
+                            )
+                            skipped += 1
+                            continue
+
+                        if new_urls:
+                            # Story has evolved — re-synthesize and mark old as historical
+                            logger.info(
+                                "story_evolved",
+                                story_id=story.id,
+                                existing_id=existing["story_id"],
+                                jaccard=round(jaccard, 2),
+                                new_articles=len(new_urls),
+                            )
+                            os_client.mark_synthesis_historical(
+                                existing["story_id"], story.id
+                            )
+
                 synthesized = summarizer.synthesize(story)
                 if synthesized:
+                    synthesized.edition = edition
                     results.append(synthesized)
             except Exception as e:
                 logger.error(
@@ -149,8 +189,10 @@ def run_synthesis(
                     column=column,
                     error=str(e),
                 )
-                # Continue processing other stories
                 continue
+
+        if skipped:
+            logger.info("stories_skipped_unchanged", column=column, skipped=skipped)
 
         # Store in OpenSearch
         if results:
@@ -164,7 +206,6 @@ def run_synthesis(
                     count=len(results),
                     error=str(e),
                 )
-                # Return 0 since we couldn't store the results
                 return 0
 
         return len(results)
@@ -261,12 +302,14 @@ def run_pipeline_cycle(
 
     # Step 3: Synthesize each column
     console.print("\n[dim]Step 3: Synthesizing stories...[/dim]")
+    edition = os_client.increment_edition()
+    console.print(f"[dim]  Edition: {edition}[/dim]")
     synthesis_counts = {}
 
     for column in COLUMNS:
         console.print(f"  [dim]{column}...[/dim]", end=" ")
         try:
-            count = run_synthesis(os_client, llm_client, column, limit=stories_per_column)
+            count = run_synthesis(os_client, llm_client, column, edition=edition, limit=stories_per_column)
             synthesis_counts[column] = count
             console.print(f"[green]{count} stories[/green]")
         except Exception as e:
