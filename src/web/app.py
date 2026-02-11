@@ -5,6 +5,8 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from markupsafe import Markup
+from markdown_it import MarkdownIt
 
 import structlog
 
@@ -47,6 +49,10 @@ def create_app() -> FastAPI:
 
     # Setup templates
     templates = Jinja2Templates(directory=str(TEMPLATE_DIR))
+
+    # Register markdown filter
+    md = MarkdownIt()
+    templates.env.filters["markdown"] = lambda text: Markup(md.render(text)) if text else ""
 
     # Store templates in app state for route access
     app.state.templates = templates

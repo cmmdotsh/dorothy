@@ -1,0 +1,42 @@
+{
+  "name": "Dorothy - Your Average Newspaper",
+  "short_name": "Dorothy",
+  "description": "News aggregator synthesizing balanced coverage from sources across the political spectrum",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f8f8f8",
+  "theme_color": "#1a1a1a",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/static/icon-192.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/static/icon-512.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["news", "magazines"],
+  "shortcuts": [
+    {
+      "name": "Politics",
+      "url": "/column/politics",
+      "description": "Political news coverage"
+    },
+    {
+      "name": "Tech",
+      "url": "/column/tech",
+      "description": "Technology news"
+    },
+    {
+      "name": "Money",
+      "url": "/column/money",
+      "description": "Business and finance news"
+    }
+  ]
+}

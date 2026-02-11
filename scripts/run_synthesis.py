@@ -43,7 +43,6 @@ def run_synthesis(
     limit: int,
     output_format: str,
     min_cluster_size: int = 3,
-    max_cluster_size: int = 30,
     store: bool = True,
 ) -> list[dict]:
     """Run story synthesis. Returns list of synthesized stories."""
@@ -87,19 +86,11 @@ def run_synthesis(
             os_client,
             min_cluster_size=min_cluster_size,
             min_samples=2,
-            max_cluster_size=max_cluster_size,
         )
         stories = grouper.get_stories_for_column(column, size=500)
 
-        # Filter to multi-source stories that are primarily about this column
-        multi_source = []
-        for s in stories:
-            if s.source_count < 2:
-                continue
-            # Check that most articles are from this column
-            col_count = sum(1 for a in s.articles if a.get("column") == column)
-            if col_count >= len(s.articles) * 0.5:  # At least 50% from this column
-                multi_source.append(s)
+        # Filter to multi-source stories
+        multi_source = [s for s in stories if s.source_count >= 2]
 
         console.print(f"[green]Found {len(multi_source)} multi-source stories for {column}[/green]")
 
@@ -182,12 +173,6 @@ def main() -> None:
         help="Minimum articles to form a cluster (default: 3)",
     )
     parser.add_argument(
-        "--max-cluster-size",
-        type=int,
-        default=30,
-        help="Split clusters larger than this (default: 30)",
-    )
-    parser.add_argument(
         "--no-store",
         action="store_true",
         help="Don't store syntheses in OpenSearch (default: store)",
@@ -206,7 +191,6 @@ def main() -> None:
         limit=args.limit,
         output_format=args.output,
         min_cluster_size=args.min_cluster_size,
-        max_cluster_size=args.max_cluster_size,
         store=not args.no_store,
     )
 

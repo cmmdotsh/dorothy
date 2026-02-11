@@ -21,8 +21,9 @@
             <h2 class="lead-headline">
                 <a href="/story/{{ lead_story.story_id }}">{{ lead_story.generated_headline }}</a>
             </h2>
-            {% if lead_story.summary %}
-            <p class="lead-summary">{{ lead_story.summary[:300] }}{% if lead_story.summary|length > 300 %}...{% endif %}</p>
+            {% set lead_preview = lead_story.article or lead_story.summary or '' %}
+            {% if lead_preview %}
+            <p class="lead-summary">{{ lead_preview[:300] }}{% if lead_preview|length > 300 %}...{% endif %}</p>
             {% endif %}
             <div class="lead-meta">
                 <span class="source-count">{{ lead_story.source_count }} sources</span>

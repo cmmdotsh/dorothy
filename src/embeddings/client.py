@@ -25,7 +25,7 @@ class EmbeddingClient:
         self,
         base_url: str = "http://192.168.0.149:1234",
         model: str = "text-embedding-mxbai-embed-large-v1",
-        timeout: float = 60.0,
+        timeout: float = 180.0,
     ):
         self.base_url = base_url.rstrip("/")
         self.endpoint = f"{self.base_url}/v1/embeddings"

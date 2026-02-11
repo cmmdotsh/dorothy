@@ -22,12 +22,29 @@
     </figure>
     {% endif %}
 
+    {% if story.article %}
     <section class="story-content">
-        <h3>Balanced Summary</h3>
-        <div class="summary-text">
-            {{ story.summary|safe }}
+        <div class="article-text">
+            {{ story.article|markdown }}
         </div>
     </section>
+    {% elif story.summary %}
+    {# Backward compat for old single-pass syntheses #}
+    <section class="story-content">
+        <div class="article-text">
+            {{ story.summary|markdown }}
+        </div>
+    </section>
+    {% endif %}
+
+    {% if story.analysis %}
+    <section class="story-content coverage-analysis">
+        <h3>Coverage Analysis</h3>
+        <div class="analysis-text">
+            {{ story.analysis|markdown }}
+        </div>
+    </section>
+    {% endif %}
 
     {% if story.bias_coverage %}
     <section class="bias-section">
@@ -74,6 +91,39 @@
             {% endfor %}
         </div>
     </section>
+    {% endif %}
+
+    <!-- Mobile Story Navigation -->
+    {% if prev_story or next_story %}
+    <nav class="story-navigation">
+        {% if prev_story %}
+        <a href="/story/{{ prev_story }}" class="story-nav-btn story-nav-prev" aria-label="Previous article">
+            <span class="nav-icon">←</span>
+            <span class="nav-label">Previous</span>
+        </a>
+        {% else %}
+        <div class="story-nav-btn story-nav-disabled"></div>
+        {% endif %}
+
+        {% if story.column %}
+        <a href="/column/{{ story.column }}" class="story-nav-btn story-nav-column" aria-label="Back to {{ story.column|title }}">
+            <span class="nav-label">{{ story.column|title }}</span>
+        </a>
+        {% else %}
+        <a href="/" class="story-nav-btn story-nav-column" aria-label="Back to front page">
+            <span class="nav-label">Home</span>
+        </a>
+        {% endif %}
+
+        {% if next_story %}
+        <a href="/story/{{ next_story }}" class="story-nav-btn story-nav-next" aria-label="Next article">
+            <span class="nav-label">Next</span>
+            <span class="nav-icon">→</span>
+        </a>
+        {% else %}
+        <div class="story-nav-btn story-nav-disabled"></div>
+        {% endif %}
+    </nav>
     {% endif %}
 
     <footer class="story-footer">

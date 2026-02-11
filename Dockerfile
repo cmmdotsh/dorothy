@@ -46,9 +46,9 @@ COPY scripts/ scripts/
 # Create output directory for static site
 RUN mkdir -p /app/output
 
-# Health check
+# Health check - verify OpenSearch connection
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8000/api/columns || exit 1
+    CMD curl -f ${OPENSEARCH_HOST:-localhost}:${OPENSEARCH_PORT:-9200}/_cluster/health || exit 1
 
 # Default command (can be overridden)
 CMD ["python", "-m", "scripts.run_pipeline", "--once"]

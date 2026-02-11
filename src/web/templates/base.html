@@ -2,16 +2,32 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}Dorothy{% endblock %} - Newspaper of Averages</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <title>{% block title %}Dorothy{% endblock %} - Your Average Newspaper</title>
+
+    <!-- PWA Meta Tags -->
+    <meta name="description" content="News aggregator synthesizing balanced coverage from sources across the political spectrum">
+    <meta name="theme-color" content="#1a1a1a">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Dorothy">
+
+    <!-- Manifest -->
+    <link rel="manifest" href="/static/manifest.json">
+
+    <!-- Icons -->
+    <link rel="icon" type="image/svg+xml" href="/static/icon-192.svg">
+    <link rel="apple-touch-icon" href="/static/icon-192.svg">
+
     <link rel="stylesheet" href="/static/style.css">
+    <script src="/static/app.js" defer></script>
 </head>
 <body>
     <header class="site-header">
         <div class="header-content">
             <a href="/" class="logo">
                 <h1>Dorothy</h1>
-                <span class="tagline">The Newspaper of Averages</span>
+                <span class="tagline">Your Average Newspaper</span>
             </a>
             <hr class="dateline-rule">
             <div class="dateline">

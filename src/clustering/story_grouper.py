@@ -68,11 +68,11 @@ class StoryGrouper:
         os_client: OpenSearchClient,
         min_cluster_size: int = 3,
         min_samples: int = 2,
-        max_cluster_size: int = 30,
         cluster_selection_epsilon: float = 0.0,
         # Legacy params (ignored, kept for backward compatibility)
         similarity_threshold: Optional[float] = None,
         k_neighbors: Optional[int] = None,
+        max_cluster_size: Optional[int] = None,
     ):
         """
         Initialize the story grouper.
@@ -81,21 +81,26 @@ class StoryGrouper:
             os_client: OpenSearch client for fetching articles
             min_cluster_size: Minimum articles to form a cluster (default: 3)
             min_samples: Core point density threshold (default: 2)
-            max_cluster_size: Split clusters larger than this (default: 30)
             cluster_selection_epsilon: Merge nearby clusters threshold (default: 0.0)
             similarity_threshold: Deprecated, kept for backward compatibility
             k_neighbors: Deprecated, kept for backward compatibility
+            max_cluster_size: Deprecated, cluster size is now managed by token-aware sampling in the summarizer
         """
         self.os_client = os_client
         self.min_cluster_size = min_cluster_size
         self.min_samples = min_samples
-        self.max_cluster_size = max_cluster_size
         self.cluster_selection_epsilon = cluster_selection_epsilon
 
         if similarity_threshold is not None or k_neighbors is not None:
             logger.warning(
                 "deprecated_params_ignored",
                 msg="similarity_threshold and k_neighbors are deprecated, using HDBSCAN params instead",
+            )
+
+        if max_cluster_size is not None:
+            logger.warning(
+                "deprecated_param_ignored",
+                msg="max_cluster_size is deprecated; token-aware sampling in the summarizer handles large clusters",
             )
 
     def _compute_distance_matrix(self, embeddings: np.ndarray) -> np.ndarray:
@@ -166,54 +171,6 @@ class StoryGrouper:
 
         return stories
 
-    def _split_large_clusters(self, stories: list[Story]) -> list[Story]:
-        """
-        Split clusters that exceed max_cluster_size.
-
-        Uses recursive HDBSCAN with tighter parameters.
-        """
-        result = []
-
-        for story in stories:
-            if len(story.articles) <= self.max_cluster_size:
-                result.append(story)
-                continue
-
-            logger.info(
-                "splitting_large_cluster",
-                story_id=story.id,
-                size=len(story.articles),
-            )
-
-            # Extract embeddings for sub-clustering
-            embeddings = np.array([a["embedding"] for a in story.articles])
-            distances = self._compute_distance_matrix(embeddings)
-
-            # Use tighter min_cluster_size for sub-clustering
-            sub_clusterer = hdbscan.HDBSCAN(
-                min_cluster_size=max(3, self.min_cluster_size),
-                min_samples=max(2, self.min_samples),
-                metric="precomputed",
-                cluster_selection_method="eom",
-                cluster_selection_epsilon=0.05,  # Slightly merge sub-clusters
-            )
-            sub_labels = sub_clusterer.fit_predict(distances)
-
-            sub_stories = self._labels_to_stories(story.articles, sub_labels)
-
-            # Recursively split if still too large
-            for sub_story in sub_stories:
-                if len(sub_story.articles) > self.max_cluster_size:
-                    # Give up on further splitting, keep as-is but log warning
-                    logger.warning(
-                        "cluster_still_large_after_split",
-                        story_id=sub_story.id,
-                        size=len(sub_story.articles),
-                    )
-                result.append(sub_story)
-
-        return result
-
     def group_articles(
         self,
         articles: list[dict],
@@ -257,9 +214,6 @@ class StoryGrouper:
 
         # Convert to stories
         stories = self._labels_to_stories(articles_with_embeddings, labels)
-
-        # Split oversized clusters
-        stories = self._split_large_clusters(stories)
 
         # Sort by article count (biggest stories first)
         stories.sort(key=lambda s: len(s.articles), reverse=True)

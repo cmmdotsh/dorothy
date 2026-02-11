@@ -42,7 +42,7 @@ services:
     build: .
     container_name: dorothy-pipeline
     restart: unless-stopped
-    command: python -m scripts.run_pipeline --interval 60 --publish
+    command: python -m scripts.run_pipeline --interval 60 --publish --stories 20
     environment:
       # OpenSearch (use container name for host)
       - OPENSEARCH_HOST=opensearch

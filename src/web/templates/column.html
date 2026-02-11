@@ -14,8 +14,9 @@
                 <a href="/story/{{ story.story_id }}">{{ story.generated_headline }}</a>
             </h3>
 
-            {% if story.summary %}
-            <p class="story-summary">{{ story.summary[:300] }}{% if story.summary|length > 300 %}...{% endif %}</p>
+            {% set preview = story.article or story.summary or '' %}
+            {% if preview %}
+            <p class="story-summary">{{ preview[:300] }}{% if preview|length > 300 %}...{% endif %}</p>
             {% endif %}
 
             <div class="story-meta">

@@ -119,41 +119,63 @@ def run_synthesis(
     limit: Optional[int] = None,
 ) -> int:
     """Synthesize stories for a column. Returns count of stories synthesized."""
-    grouper = StoryGrouper(
-        os_client,
-        min_cluster_size=3,
-        min_samples=2,
-        max_cluster_size=30,
-    )
-    stories = grouper.get_stories_for_column(column, size=2000)
+    try:
+        grouper = StoryGrouper(
+            os_client,
+            min_cluster_size=3,
+            min_samples=2,
+        )
+        stories = grouper.get_stories_for_column(column, size=2000)
 
-    # Filter to multi-source stories primarily about this column
-    multi_source = []
-    for s in stories:
-        if s.source_count < 2:
-            continue
-        col_count = sum(1 for a in s.articles if a.get("column") == column)
-        if col_count >= len(s.articles) * 0.5:
-            multi_source.append(s)
+        # Filter to multi-source stories
+        multi_source = [s for s in stories if s.source_count >= 2]
 
-    if not multi_source:
+        if not multi_source:
+            return 0
+
+        summarizer = StorySummarizer(llm_client)
+        results = []
+
+        stories_to_process = multi_source[:limit] if limit else multi_source
+        for story in stories_to_process:
+            try:
+                synthesized = summarizer.synthesize(story)
+                if synthesized:
+                    results.append(synthesized)
+            except Exception as e:
+                logger.error(
+                    "story_synthesis_error",
+                    story_id=story.id,
+                    column=column,
+                    error=str(e),
+                )
+                # Continue processing other stories
+                continue
+
+        # Store in OpenSearch
+        if results:
+            try:
+                result_dicts = [r.to_dict() for r in results]
+                os_client.bulk_store_syntheses(result_dicts, column)
+            except Exception as e:
+                logger.error(
+                    "synthesis_storage_error",
+                    column=column,
+                    count=len(results),
+                    error=str(e),
+                )
+                # Return 0 since we couldn't store the results
+                return 0
+
+        return len(results)
+
+    except Exception as e:
+        logger.error(
+            "synthesis_column_error",
+            column=column,
+            error=str(e),
+        )
         return 0
-
-    summarizer = StorySummarizer(llm_client)
-    results = []
-
-    stories_to_process = multi_source[:limit] if limit else multi_source
-    for story in stories_to_process:
-        synthesized = summarizer.synthesize(story)
-        if synthesized:
-            results.append(synthesized)
-
-    # Store in OpenSearch
-    if results:
-        result_dicts = [r.to_dict() for r in results]
-        os_client.bulk_store_syntheses(result_dicts, column)
-
-    return len(results)
 
 
 def run_render_deploy() -> None:
@@ -165,9 +187,15 @@ def run_render_deploy() -> None:
 
     # Render
     console.print("\n[dim]Step 4: Rendering static site...[/dim]")
-    generator = StaticSiteGenerator(output_dir)
-    generator.clean()
-    generator.generate()
+    try:
+        generator = StaticSiteGenerator(output_dir)
+        generator.clean()
+        generator.generate()
+        console.print("[green]  Static site rendered successfully[/green]")
+    except Exception as e:
+        logger.error("render_failed", error=str(e))
+        console.print(f"[red]  Render failed: {e}[/red]")
+        return
 
     # Deploy
     bucket = os.environ.get("S3_BUCKET")
@@ -189,8 +217,10 @@ def run_render_deploy() -> None:
         console.print(f"[green]  Uploaded {result['uploaded']} files[/green]")
         if cloudfront_id:
             deployer.invalidate_cloudfront()
+            console.print("[green]  CloudFront cache invalidated[/green]")
     except Exception as e:
         logger.error("deploy_failed", error=str(e))
+        console.print(f"[red]  Deploy failed: {e}[/red]")
 
 
 def run_pipeline_cycle(
@@ -208,16 +238,26 @@ def run_pipeline_cycle(
 
     # Step 1: Fetch
     console.print("\n[dim]Step 1: Fetching articles...[/dim]")
-    new_articles = run_fetch(os_client)
-    console.print(f"[green]  Fetched {new_articles} new articles[/green]")
+    try:
+        new_articles = run_fetch(os_client)
+        console.print(f"[green]  Fetched {new_articles} new articles[/green]")
+    except Exception as e:
+        logger.error("fetch_failed", error=str(e))
+        console.print(f"[red]  Fetch failed: {e}[/red]")
+        new_articles = 0
 
     # Step 2: Generate embeddings
     console.print("\n[dim]Step 2: Generating embeddings...[/dim]")
-    embedded_count = run_embeddings(os_client)
-    if embedded_count > 0:
-        console.print(f"[green]  Generated embeddings for {embedded_count} articles[/green]")
-    else:
-        console.print(f"[dim]  All articles already have embeddings[/dim]")
+    try:
+        embedded_count = run_embeddings(os_client)
+        if embedded_count > 0:
+            console.print(f"[green]  Generated embeddings for {embedded_count} articles[/green]")
+        else:
+            console.print(f"[dim]  All articles already have embeddings[/dim]")
+    except Exception as e:
+        logger.error("embedding_failed", error=str(e))
+        console.print(f"[red]  Embedding failed: {e}[/red]")
+        embedded_count = 0
 
     # Step 3: Synthesize each column
     console.print("\n[dim]Step 3: Synthesizing stories...[/dim]")
@@ -225,13 +265,22 @@ def run_pipeline_cycle(
 
     for column in COLUMNS:
         console.print(f"  [dim]{column}...[/dim]", end=" ")
-        count = run_synthesis(os_client, llm_client, column, limit=stories_per_column)
-        synthesis_counts[column] = count
-        console.print(f"[green]{count} stories[/green]")
+        try:
+            count = run_synthesis(os_client, llm_client, column, limit=stories_per_column)
+            synthesis_counts[column] = count
+            console.print(f"[green]{count} stories[/green]")
+        except Exception as e:
+            logger.error("column_synthesis_failed", column=column, error=str(e))
+            console.print(f"[red]0 stories (error)[/red]")
+            synthesis_counts[column] = 0
 
     # Step 4+5: Render and deploy
     if render_and_deploy:
-        run_render_deploy()
+        try:
+            run_render_deploy()
+        except Exception as e:
+            logger.error("render_deploy_failed", error=str(e))
+            console.print(f"[red]  Render/deploy phase failed: {e}[/red]")
 
     # Summary
     end_time = datetime.now(timezone.utc)
@@ -300,7 +349,15 @@ def daemon_mode(interval_minutes: int, stories_per_column: int, render_and_deplo
     def scheduled_run():
         run_pipeline_cycle(os_client, llm_client, stories_per_column, render_and_deploy)
 
-    schedule.every(interval_minutes).minutes.do(scheduled_run)
+    # Schedule on the hour if interval is a whole number of hours
+    if interval_minutes == 60:
+        schedule.every().hour.at(":00").do(scheduled_run)
+    elif interval_minutes % 60 == 0:
+        hours = interval_minutes // 60
+        schedule.every(hours).hours.at(":00").do(scheduled_run)
+    else:
+        # For non-hour intervals, use minute-based scheduling
+        schedule.every(interval_minutes).minutes.do(scheduled_run)
 
     # Graceful shutdown
     def shutdown_handler(signum, frame):

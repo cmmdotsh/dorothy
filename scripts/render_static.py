@@ -17,6 +17,8 @@ from datetime import datetime, timezone
 
 import structlog
 from jinja2 import Environment, FileSystemLoader
+from markupsafe import Markup
+from markdown_it import MarkdownIt
 from rich.console import Console
 
 from src.config import config
@@ -59,6 +61,8 @@ class StaticSiteGenerator:
             loader=FileSystemLoader(self.templates_dir),
             autoescape=True,
         )
+        md = MarkdownIt()
+        self.env.filters["markdown"] = lambda text: Markup(md.render(text)) if text else ""
 
         # Initialize OpenSearch client
         auth_kwargs = {}
@@ -74,9 +78,13 @@ class StaticSiteGenerator:
         )
 
     def clean(self) -> None:
-        """Remove existing output directory."""
+        """Remove contents of the output directory (safe for volume mounts)."""
         if self.output_dir.exists():
-            shutil.rmtree(self.output_dir)
+            for child in self.output_dir.iterdir():
+                if child.is_dir():
+                    shutil.rmtree(child)
+                else:
+                    child.unlink()
             console.print(f"[dim]Cleaned {self.output_dir}[/dim]")
 
     def setup_output(self) -> None:
@@ -157,21 +165,33 @@ class StaticSiteGenerator:
         console.print("[green]  Rendered about/index.html[/green]")
 
     def render_story_pages(self) -> int:
-        """Render all individual story pages. Returns count."""
-        all_stories = self.get_all_stories()
+        """Render all individual story pages with navigation. Returns count."""
+        # Group stories by column for navigation
+        stories_by_column = {}
+        for column in COLUMNS:
+            stories_by_column[column] = self.os_client.get_syntheses(column=column, limit=100)
+
         rendered = 0
 
-        for story in all_stories:
-            story_id = story.get("story_id")
-            if not story_id:
-                continue
+        # Render each story with prev/next navigation within its column
+        for column, stories in stories_by_column.items():
+            for i, story in enumerate(stories):
+                story_id = story.get("story_id")
+                if not story_id:
+                    continue
 
-            html = self.render_template("story.html", {
-                "story": story,
-            })
+                # Get prev/next story IDs within the same column
+                prev_story = stories[i - 1].get("story_id") if i > 0 else None
+                next_story = stories[i + 1].get("story_id") if i < len(stories) - 1 else None
 
-            self.write_page(self.output_dir / "story" / story_id / "index.html", html)
-            rendered += 1
+                html = self.render_template("story.html", {
+                    "story": story,
+                    "prev_story": prev_story,
+                    "next_story": next_story,
+                })
+
+                self.write_page(self.output_dir / "story" / story_id / "index.html", html)
+                rendered += 1
 
         console.print(f"[green]  Rendered {rendered} story pages[/green]")
         return rendered

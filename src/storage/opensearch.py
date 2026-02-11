@@ -35,7 +35,8 @@ SYNTHESIS_MAPPING = {
                 "type": "text",
                 "fields": {"keyword": {"type": "keyword", "ignore_above": 500}},
             },
-            "summary": {"type": "text"},
+            "article": {"type": "text"},
+            "analysis": {"type": "text"},
             "sources_used": {"type": "keyword"},
             "bias_coverage": {"type": "object", "enabled": True},
             "article_count": {"type": "integer"},
@@ -107,6 +108,7 @@ class OpenSearchClient:
         password: Optional[str] = None,
         use_ssl: bool = False,
         verify_certs: bool = False,
+        timeout: int = 120,
     ):
         self.host = host
         self.port = port
@@ -124,6 +126,7 @@ class OpenSearchClient:
             use_ssl=use_ssl,
             verify_certs=verify_certs,
             ssl_show_warn=False,
+            timeout=timeout,
         )
 
     def health_check(self) -> bool:
@@ -420,7 +423,8 @@ class OpenSearchClient:
             "column": column,
             "original_headline": synthesis.get("original_headline", ""),
             "generated_headline": synthesis.get("generated_headline", ""),
-            "summary": synthesis.get("summary", ""),
+            "article": synthesis.get("article", ""),
+            "analysis": synthesis.get("analysis", ""),
             "sources_used": synthesis.get("sources_used", []),
             "bias_coverage": synthesis.get("bias_coverage", {}),
             "article_count": synthesis.get("article_count", 0),
@@ -456,7 +460,8 @@ class OpenSearchClient:
                 "column": column,
                 "original_headline": synthesis.get("original_headline", ""),
                 "generated_headline": synthesis.get("generated_headline", ""),
-                "summary": synthesis.get("summary", ""),
+                "article": synthesis.get("article", ""),
+                "analysis": synthesis.get("analysis", ""),
                 "sources_used": synthesis.get("sources_used", []),
                 "bias_coverage": synthesis.get("bias_coverage", {}),
                 "article_count": synthesis.get("article_count", 0),
@@ -500,9 +505,9 @@ class OpenSearchClient:
             "query": query,
             "size": limit,
             "sort": [
-                {"source_count": {"order": "desc"}},  # Most sources first
-                {"article_count": {"order": "desc"}},  # Then most articles
-                {"generated_at": {"order": "desc"}},  # Then newest
+                {"generated_at": {"order": "desc"}},  # Newest first
+                {"article_count": {"order": "desc"}},  # Then most coverage
+                {"source_count": {"order": "desc"}},  # Then most sources
             ],
         }
 
