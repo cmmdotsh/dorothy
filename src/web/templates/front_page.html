@@ -12,11 +12,14 @@
         {% if lead_story %}
         <article class="lead-story">
             {% if lead_story.hero_image_url %}
-            <div class="lead-image">
+            <figure class="lead-image">
                 <a href="/story/{{ lead_story.story_id }}">
                     <img src="{{ lead_story.hero_image_url }}" alt="{{ lead_story.generated_headline }}" loading="lazy">
                 </a>
-            </div>
+                {% if lead_story.hero_image_source %}
+                <figcaption class="photo-credit">{{ lead_story.hero_image_source }}</figcaption>
+                {% endif %}
+            </figure>
             {% endif %}
             <h2 class="lead-headline">
                 <a href="/story/{{ lead_story.story_id }}">{{ lead_story.generated_headline }}</a>
@@ -29,6 +32,10 @@
                 <span class="source-count">{{ lead_story.source_count }} sources</span>
                 <span class="sep">&bull;</span>
                 <span class="article-count">{{ lead_story.article_count }} articles</span>
+                {% if lead_story.first_pub_date %}
+                <span class="sep">&bull;</span>
+                <time class="timeago" datetime="{{ lead_story.first_pub_date }}">{{ lead_story.first_pub_date }}</time>
+                {% endif %}
                 {% if lead_story.bias_coverage %}
                 <span class="sep">&bull;</span>
                 <span class="bias-indicators">

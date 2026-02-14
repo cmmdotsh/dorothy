@@ -44,12 +44,15 @@ SYNTHESIS_MAPPING = {
             "source_count": {"type": "integer"},
             "generated_at": {"type": "date"},
             "hero_image_url": {"type": "keyword"},
+            "hero_image_source": {"type": "keyword"},
             "article_urls": {"type": "keyword"},
             "edition": {"type": "integer"},
             "is_current": {"type": "boolean"},
             "superseded_by": {"type": "keyword"},
             "hotness_score": {"type": "float"},
             "median_pub_date": {"type": "date"},
+            "first_pub_date": {"type": "date"},
+            "last_pub_date": {"type": "date"},
             "articles": {
                 "type": "nested",
                 "properties": {
@@ -438,6 +441,7 @@ class OpenSearchClient:
             "source_count": len(synthesis.get("sources_used", [])),
             "generated_at": synthesis.get("generated_at", utcnow().isoformat()),
             "hero_image_url": synthesis.get("hero_image_url"),
+            "hero_image_source": synthesis.get("hero_image_source"),
             "articles": synthesis.get("articles", []),
             "article_urls": synthesis.get("article_urls", []),
             "edition": synthesis.get("edition", 1),
@@ -445,6 +449,8 @@ class OpenSearchClient:
             "superseded_by": synthesis.get("superseded_by"),
             "hotness_score": synthesis.get("hotness_score", 0.0),
             "median_pub_date": synthesis.get("median_pub_date"),
+            "first_pub_date": synthesis.get("first_pub_date"),
+            "last_pub_date": synthesis.get("last_pub_date"),
         }
 
         try:
@@ -481,6 +487,7 @@ class OpenSearchClient:
                 "source_count": len(synthesis.get("sources_used", [])),
                 "generated_at": synthesis.get("generated_at", utcnow().isoformat()),
                 "hero_image_url": synthesis.get("hero_image_url"),
+                "hero_image_source": synthesis.get("hero_image_source"),
                 "articles": synthesis.get("articles", []),
                 "article_urls": synthesis.get("article_urls", []),
                 "edition": synthesis.get("edition", 1),
@@ -488,6 +495,8 @@ class OpenSearchClient:
                 "superseded_by": synthesis.get("superseded_by"),
                 "hotness_score": synthesis.get("hotness_score", 0.0),
                 "median_pub_date": synthesis.get("median_pub_date"),
+                "first_pub_date": synthesis.get("first_pub_date"),
+                "last_pub_date": synthesis.get("last_pub_date"),
             }
             actions.append({
                 "_index": SYNTHESIS_INDEX,
@@ -538,17 +547,36 @@ class OpenSearchClient:
             })
 
         if must_clauses:
-            query = {"bool": {"must": must_clauses}}
+            inner_query = {"bool": {"must": must_clauses}}
         else:
-            query = {"match_all": {}}
+            inner_query = {"match_all": {}}
 
+        # Live hotness: article_count / max(1, hours_since_median) * source_diversity_bonus
+        # Uses script_score so ranking decays naturally over time.
         body = {
-            "query": query,
+            "query": {
+                "function_score": {
+                    "query": inner_query,
+                    "script_score": {
+                        "script": {
+                            "source": (
+                                "double articles = doc['article_count'].size() > 0 ? doc['article_count'].value : 1;"
+                                "double sources = doc['source_count'].size() > 0 ? doc['source_count'].value : 1;"
+                                "double diversity = 1.0 + 0.1 * Math.max(0, sources - 1);"
+                                "if (doc['median_pub_date'].size() == 0) { return articles * diversity; }"
+                                "double ageHours = (new Date().getTime() - doc['median_pub_date'].value.toInstant().toEpochMilli()) / 3600000.0;"
+                                "ageHours = Math.max(1.0, ageHours);"
+                                "return (articles / ageHours) * diversity;"
+                            ),
+                        },
+                    },
+                    "boost_mode": "replace",
+                },
+            },
             "size": limit,
             "sort": [
-                {"hotness_score": {"order": "desc", "missing": "_last"}},
+                {"_score": {"order": "desc"}},
                 {"generated_at": {"order": "desc"}},
-                {"article_count": {"order": "desc"}},
             ],
         }
 

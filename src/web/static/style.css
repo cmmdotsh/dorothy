@@ -427,6 +427,25 @@ img {
     gap: 0.5rem;
 }
 
+.story-timing {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    display: flex;
+    gap: 1rem;
+    margin-top: 0.4rem;
+}
+
+.timing-item {
+    font-weight: 600;
+    letter-spacing: 0.02em;
+}
+
+time.timeago,
+time.timeago-full {
+    font-weight: 400;
+}
+
 .bias-indicators {
     display: inline-flex;
     gap: 3px;
@@ -596,6 +615,14 @@ img {
     display: block;
 }
 
+.photo-credit {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    padding: 0.3rem 0;
+    font-style: italic;
+}
+
 .column-tag {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     font-size: 0.7rem;
@@ -631,6 +658,61 @@ img {
     font-size: 1.05rem;
     line-height: 1.75;
     white-space: pre-wrap;
+}
+
+/* Article & analysis prose typography */
+.article-text p,
+.analysis-text p {
+    font-size: 1.05rem;
+    line-height: 1.75;
+    margin-bottom: 1.75em;
+}
+
+.article-text p:last-child,
+.analysis-text p:last-child {
+    margin-bottom: 0;
+}
+
+.article-text ul,
+.article-text ol,
+.analysis-text ul,
+.analysis-text ol {
+    font-size: 1.05rem;
+    line-height: 1.75;
+    margin: 0.75rem 0 1rem 0;
+    padding-left: 1.5rem;
+    list-style-position: outside;
+}
+
+.article-text li,
+.analysis-text li {
+    margin-bottom: 0.4rem;
+}
+
+.article-text li:last-child,
+.analysis-text li:last-child {
+    margin-bottom: 0;
+}
+
+.article-text blockquote,
+.analysis-text blockquote {
+    border-left: 3px solid var(--border-color);
+    padding-left: 1rem;
+    margin: 1rem 0;
+    color: var(--text-secondary);
+    font-style: italic;
+}
+
+.article-text h4,
+.analysis-text h4 {
+    font-size: 1rem;
+    font-weight: 700;
+    margin: 1.25rem 0 0.5rem;
+}
+
+.article-text strong,
+.analysis-text strong {
+    font-weight: 700;
 }
 
 /* Bias Section */

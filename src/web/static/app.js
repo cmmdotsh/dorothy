@@ -60,6 +60,44 @@ document.addEventListener('keydown', e => {
   }
 });
 
+// Relative time formatting
+function relativeTime(dt) {
+  const now = new Date();
+  const diffMs = now - dt;
+  const diffMins = Math.floor(diffMs / 60000);
+  const diffHrs = Math.floor(diffMs / 3600000);
+  const diffDays = Math.floor(diffMs / 86400000);
+
+  if (diffMins < 1) return 'just now';
+  if (diffMins < 60) return diffMins + 'm ago';
+  if (diffHrs < 24) return diffHrs + 'h ago';
+  if (diffDays < 7) return diffDays + 'd ago';
+  return dt.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+// Compact relative time for listing pages
+function updateTimeago() {
+  document.querySelectorAll('time.timeago').forEach(el => {
+    const dt = new Date(el.getAttribute('datetime'));
+    if (isNaN(dt)) return;
+    el.textContent = relativeTime(dt);
+  });
+
+  // Full readable dates for story detail pages: "Feb 12, 2:34 PM (3h ago)"
+  document.querySelectorAll('time.timeago-full').forEach(el => {
+    const dt = new Date(el.getAttribute('datetime'));
+    if (isNaN(dt)) return;
+    const formatted = dt.toLocaleDateString(undefined, {
+      month: 'short', day: 'numeric', year: 'numeric'
+    }) + ', ' + dt.toLocaleTimeString(undefined, {
+      hour: 'numeric', minute: '2-digit'
+    });
+    const rel = relativeTime(dt);
+    el.textContent = formatted + ' (' + rel + ')';
+  });
+}
+updateTimeago();
+
 // Column page sort controls
 const sortControls = document.querySelector('.sort-controls');
 if (sortControls) {

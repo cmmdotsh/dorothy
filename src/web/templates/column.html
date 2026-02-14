@@ -31,6 +31,10 @@
             <div class="story-meta">
                 <span class="source-count">{{ story.source_count }} sources</span>
                 <span class="article-count">{{ story.article_count }} articles</span>
+                {% if story.first_pub_date %}
+                <span class="sep">&bull;</span>
+                <time class="timeago" datetime="{{ story.first_pub_date }}">{{ story.first_pub_date }}</time>
+                {% endif %}
             </div>
 
             {% if story.bias_coverage %}

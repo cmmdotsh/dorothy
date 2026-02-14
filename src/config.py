@@ -58,9 +58,10 @@ class LLMSettings(BaseSettings):
     """LLM service settings for story synthesis."""
 
     base_url: str = "http://192.168.0.149:1234"
-    model: str = "qwen/qwen3-next-80b"
+    model: str = "qwen/qwen3-30b-a3b-2507"
     temperature: float = 0.3
     max_tokens: int = 1500
+    context_length: int = 32768
 
     class Config:
         env_prefix = "LLM_"

@@ -112,6 +112,13 @@ class S3Deployer:
 
     def get_cache_control(self, path: Path) -> str:
         """Get cache control header for a file."""
+        name = path.name
+        # sw.js must always be revalidated so browsers pick up new versions
+        if name == "sw.js":
+            return "public, max-age=0, must-revalidate"
+        # manifest.json — short cache
+        if name == "manifest.json":
+            return "public, max-age=3600"
         ext = path.suffix.lower()
         return CACHE_CONTROL.get(ext, "public, max-age=3600")
 

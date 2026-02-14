@@ -14,11 +14,24 @@
             <span class="source-count">{{ story.source_count }} sources</span>
             <span class="article-count">{{ story.article_count }} articles</span>
         </div>
+        {% if story.first_pub_date or story.last_pub_date %}
+        <div class="story-timing">
+            {% if story.first_pub_date %}
+            <span class="timing-item">Broke: <time class="timeago-full" datetime="{{ story.first_pub_date }}">{{ story.first_pub_date }}</time></span>
+            {% endif %}
+            {% if story.last_pub_date %}
+            <span class="timing-item">Updated: <time class="timeago-full" datetime="{{ story.last_pub_date }}">{{ story.last_pub_date }}</time></span>
+            {% endif %}
+        </div>
+        {% endif %}
     </header>
 
     {% if story.hero_image_url %}
     <figure class="hero-image">
         <img src="{{ story.hero_image_url }}" alt="{{ story.generated_headline }}" loading="lazy">
+        {% if story.hero_image_source %}
+        <figcaption class="photo-credit">Photo: {{ story.hero_image_source }}</figcaption>
+        {% endif %}
     </figure>
     {% endif %}
 

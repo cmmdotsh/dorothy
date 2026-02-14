@@ -1,5 +1,7 @@
 """Story summarizer for generating balanced news synthesis."""
 
+import json
+import re
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -28,7 +30,8 @@ Guidelines:
 - Use neutral, precise language — no editorializing or opinion
 - Attribute specific claims to their sources when appropriate
 - Include relevant context and background
-- Write as if this is the definitive account of the story"""
+- Write as if this is the definitive account of the story
+- Respond in JSON with "headline" and "article" fields"""
 
 # ── Pass 2: Coverage Analysis ──
 
@@ -42,7 +45,46 @@ Guidelines:
 - Identify differences in language, sourcing, and narrative framing
 - Be specific — cite outlet names and concrete examples
 - Don't just list differences; explain why they matter
-- Write in an analytical but accessible tone"""
+- Write in an analytical but accessible tone
+- Respond in JSON with an "analysis" field"""
+
+
+
+def _extract_json(raw: str) -> str:
+    """Extract JSON object from LLM response that may contain extra text.
+
+    Models sometimes wrap JSON in markdown fences, think blocks, or preamble.
+    """
+    # Strip markdown code fences
+    cleaned = re.sub(r"```(?:json)?\s*", "", raw).strip().rstrip("`")
+    # Strip <think>...</think> blocks (Qwen thinking mode)
+    cleaned = re.sub(r"<think>.*?</think>\s*", "", cleaned, flags=re.DOTALL).strip()
+    # Find the first { ... last }
+    start = cleaned.find("{")
+    end = cleaned.rfind("}")
+    if start != -1 and end != -1 and end > start:
+        return cleaned[start : end + 1]
+    return cleaned
+
+
+def _parse_llm_json(raw: str) -> dict:
+    """Parse JSON from LLM response, handling common model quirks.
+
+    1. Strips markdown fences, think blocks, and preamble text
+    2. Fixes unescaped newlines inside JSON string values
+    """
+    extracted = _extract_json(raw)
+    try:
+        return json.loads(extracted)
+    except json.JSONDecodeError:
+        # Escape literal newlines/carriage-returns inside quoted string values
+        fixed = re.sub(
+            r'"((?:[^"\\]|\\.)*)"',
+            lambda m: '"' + m.group(1).replace("\r", "\\r").replace("\n", "\\n") + '"',
+            extracted,
+            flags=re.DOTALL,
+        )
+        return json.loads(fixed)
 
 
 def _utcnow() -> datetime:
@@ -64,11 +106,14 @@ class SynthesizedStory:
     generated_at: datetime = field(default_factory=_utcnow)
     articles: list[dict] = field(default_factory=list)
     hero_image_url: Optional[str] = None
+    hero_image_source: Optional[str] = None
     article_urls: list[str] = field(default_factory=list)
     edition: int = 1
     is_current: bool = True
     hotness_score: float = 0.0
     median_pub_date: Optional[str] = None
+    first_pub_date: Optional[str] = None
+    last_pub_date: Optional[str] = None
 
     @property
     def summary(self) -> str:
@@ -89,11 +134,14 @@ class SynthesizedStory:
             "generated_at": self.generated_at.isoformat(),
             "articles": self.articles,
             "hero_image_url": self.hero_image_url,
+            "hero_image_source": self.hero_image_source,
             "article_urls": self.article_urls,
             "edition": self.edition,
             "is_current": self.is_current,
             "hotness_score": self.hotness_score,
             "median_pub_date": self.median_pub_date,
+            "first_pub_date": self.first_pub_date,
+            "last_pub_date": self.last_pub_date,
         }
 
     def to_markdown(self) -> str:
@@ -117,12 +165,19 @@ class SynthesizedStory:
 """
 
 
-def compute_hotness(articles: list[dict], now: Optional[datetime] = None) -> tuple[float, Optional[str]]:
-    """Compute a hotness score and median pub_date for a set of articles.
+@dataclass
+class StoryTiming:
+    """Timing metadata derived from article pub_dates."""
+    hotness_score: float = 0.0
+    median_pub_date: Optional[str] = None
+    first_pub_date: Optional[str] = None
+    last_pub_date: Optional[str] = None
+
+
+def compute_story_timing(articles: list[dict], now: Optional[datetime] = None) -> StoryTiming:
+    """Compute hotness score and story timing from article pub_dates.
 
     hotness = article_count / max(1, hours_since_median_pub_date) * source_diversity_bonus
-
-    Returns (hotness_score, median_pub_date_iso).
     """
     if now is None:
         now = _utcnow()
@@ -142,7 +197,7 @@ def compute_hotness(articles: list[dict], now: Optional[datetime] = None) -> tup
         pub_dates.append(pd)
 
     if not pub_dates:
-        return (0.0, None)
+        return StoryTiming()
 
     pub_dates.sort()
     median_idx = len(pub_dates) // 2
@@ -156,7 +211,12 @@ def compute_hotness(articles: list[dict], now: Optional[datetime] = None) -> tup
 
     hotness = (article_count / hours_since_median) * source_diversity_bonus
 
-    return (round(hotness, 4), median_date.isoformat())
+    return StoryTiming(
+        hotness_score=round(hotness, 4),
+        median_pub_date=median_date.isoformat(),
+        first_pub_date=pub_dates[0].isoformat(),
+        last_pub_date=pub_dates[-1].isoformat(),
+    )
 
 
 class StorySummarizer:
@@ -315,63 +375,26 @@ class StorySummarizer:
         }
         return self._build_articles_text(sampled)
 
-    def _parse_article_response(self, response: str) -> tuple[str, str]:
-        """Parse the article generation response into headline and article body."""
-        headline = ""
-        article = ""
+    def _pick_hero_image(self, articles: list[dict]) -> tuple[Optional[str], Optional[str]]:
+        """Pick the best hero image from articles, preferring center sources.
 
-        lines = response.strip().split("\n")
-        in_article = False
-
-        for line in lines:
-            if line.startswith("HEADLINE:"):
-                headline = line.replace("HEADLINE:", "").strip()
-            elif line.startswith("ARTICLE:"):
-                in_article = True
-            elif in_article:
-                article += line + "\n"
-
-        # Fallback if format wasn't followed
-        if not headline and not article:
-            article = response
-            headline = response.split("\n")[0][:100]
-
-        return headline.strip(), article.strip()
-
-    def _parse_analysis_response(self, response: str) -> str:
-        """Parse the analysis generation response."""
-        lines = response.strip().split("\n")
-        analysis = ""
-        in_analysis = False
-
-        for line in lines:
-            if line.startswith("ANALYSIS:"):
-                in_analysis = True
-            elif in_analysis:
-                analysis += line + "\n"
-
-        # Fallback: use the whole response
-        if not analysis:
-            analysis = response
-
-        return analysis.strip()
-
-    def _pick_hero_image(self, articles: list[dict]) -> Optional[str]:
-        """Pick the best hero image from articles, preferring center sources."""
+        Returns:
+            (image_url, source_name) tuple
+        """
         # Prefer images from center/lean sources for neutral framing
         preference_order = ["center", "lean-left", "lean-right", "left", "right"]
 
         for bias in preference_order:
             for article in articles:
                 if article.get("source_bias") == bias and article.get("image_url"):
-                    return article["image_url"]
+                    return article["image_url"], article.get("source_name", "")
 
         # Fallback: first article with any image
         for article in articles:
             if article.get("image_url"):
-                return article["image_url"]
+                return article["image_url"], article.get("source_name", "")
 
-        return None
+        return None, None
 
     def _build_article_refs(self, articles: list[dict]) -> list[dict]:
         """Build article reference list for storage."""
@@ -415,16 +438,15 @@ class StorySummarizer:
             article_prompt = (
                 "Below are news reports covering the same story from multiple outlets.\n\n"
                 f"{articles_text}\n\n"
-                "Write a comprehensive news article based on these sources.\n\n"
-                "Format your response as:\n"
-                "HEADLINE: [a clear, neutral headline]\n\n"
-                "ARTICLE:\n"
-                "[your news article]"
+                "Write a comprehensive news article based on these sources.\n"
+                'Respond with a JSON object containing "headline" and "article" keys.'
             )
             article_response = self.llm.generate(
-                article_prompt, system_prompt=ARTICLE_SYSTEM_PROMPT
+                article_prompt, system_prompt=ARTICLE_SYSTEM_PROMPT,
             )
-            headline, article = self._parse_article_response(article_response)
+            parsed = _parse_llm_json(article_response)
+            headline = parsed["headline"].strip()
+            article = parsed["article"].strip()
 
             logger.info(
                 "article_generated",
@@ -443,10 +465,8 @@ class StorySummarizer:
                 f"{articles_text}\n\n"
                 "Write a coverage analysis that examines how different outlets covered this story.\n"
                 "Focus on meaningful differences in framing, emphasis, language, and what was\n"
-                "included or omitted by different sources.\n\n"
-                "Format your response as:\n"
-                "ANALYSIS:\n"
-                "[your coverage analysis]"
+                "included or omitted by different sources.\n"
+                'Respond with a JSON object containing an "analysis" key.'
             )
 
             # Check if analysis prompt fits the budget (it's bigger than
@@ -473,16 +493,15 @@ class StorySummarizer:
                     f"{truncated_text}\n\n"
                     "Write a coverage analysis that examines how different outlets covered this story.\n"
                     "Focus on meaningful differences in framing, emphasis, language, and what was\n"
-                    "included or omitted by different sources.\n\n"
-                    "Format your response as:\n"
-                    "ANALYSIS:\n"
-                    "[your coverage analysis]"
+                    "included or omitted by different sources.\n"
+                    'Respond with a JSON object containing an "analysis" key.'
                 )
 
             analysis_response = self.llm.generate(
-                analysis_prompt, system_prompt=ANALYSIS_SYSTEM_PROMPT
+                analysis_prompt, system_prompt=ANALYSIS_SYSTEM_PROMPT,
             )
-            analysis = self._parse_analysis_response(analysis_response)
+            parsed_analysis = _parse_llm_json(analysis_response)
+            analysis = parsed_analysis["analysis"].strip()
 
             logger.info(
                 "analysis_generated",
@@ -491,9 +510,9 @@ class StorySummarizer:
 
             sources_used = list(set(a.get("source_slug", "") for a in story.articles))
             article_refs = self._build_article_refs(story.articles)
-            hero_image = self._pick_hero_image(story.articles)
+            hero_image_url, hero_image_source = self._pick_hero_image(story.articles)
             article_urls = sorted(str(a.get("url", "")) for a in story.articles if a.get("url"))
-            hotness, median_pub = compute_hotness(story.articles)
+            timing = compute_story_timing(story.articles)
 
             result = SynthesizedStory(
                 story_id=story.id,
@@ -505,10 +524,13 @@ class StorySummarizer:
                 bias_coverage=story.bias_spread,
                 article_count=len(story.articles),
                 articles=article_refs,
-                hero_image_url=hero_image,
+                hero_image_url=hero_image_url,
+                hero_image_source=hero_image_source,
                 article_urls=article_urls,
-                hotness_score=hotness,
-                median_pub_date=median_pub,
+                hotness_score=timing.hotness_score,
+                median_pub_date=timing.median_pub_date,
+                first_pub_date=timing.first_pub_date,
+                last_pub_date=timing.last_pub_date,
             )
 
             logger.info(
@@ -520,7 +542,7 @@ class StorySummarizer:
 
             return result
 
-        except LLMError as e:
+        except (LLMError, json.JSONDecodeError, KeyError) as e:
             logger.error("synthesis_failed", story_id=story.id, error=str(e))
             return None
 

@@ -50,9 +50,10 @@ services:
       - OPENSEARCH_USE_SSL=false
       # LLM service (your local LM Studio)
       - LLM_BASE_URL=${LLM_BASE_URL:-http://host.docker.internal:1234}
-      - LLM_MODEL=${LLM_MODEL:-qwen/qwen3-next-80b}
+      - LLM_MODEL=${LLM_MODEL:-qwen/qwen3-30b-a3b-2507}
       - LLM_TEMPERATURE=0.3
-      - LLM_MAX_TOKENS=1500
+      - LLM_MAX_TOKENS=4096
+      - LLM_CONTEXT_LENGTH=${LLM_CONTEXT_LENGTH:-32768}
       # Embedding service
       - EMBEDDING_BASE_URL=${EMBEDDING_BASE_URL:-http://host.docker.internal:1234}
       - EMBEDDING_MODEL=${EMBEDDING_MODEL:-text-embedding-mxbai-embed-large-v1}
@@ -87,7 +88,7 @@ services:
       - OPENSEARCH_PORT=9200
       - OPENSEARCH_USE_SSL=false
       - LLM_BASE_URL=${LLM_BASE_URL:-http://host.docker.internal:1234}
-      - LLM_MODEL=${LLM_MODEL:-qwen/qwen3-next-80b}
+      - LLM_MODEL=${LLM_MODEL:-qwen/qwen3-30b-a3b-2507}
       - EMBEDDING_BASE_URL=${EMBEDDING_BASE_URL:-http://host.docker.internal:1234}
       - EMBEDDING_MODEL=${EMBEDDING_MODEL:-text-embedding-mxbai-embed-large-v1}
     networks:

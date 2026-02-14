@@ -28,7 +28,7 @@ from src.models import Article
 from src.storage import OpenSearchClient
 from src.clustering import StoryGrouper
 from src.synthesis import LLMClient, StorySummarizer
-from src.synthesis.summarizer import compute_hotness
+from src.synthesis.summarizer import compute_story_timing
 from src.embeddings import EmbeddingClient
 from src.embeddings.generator import generate_embeddings
 from scripts.render_static import StaticSiteGenerator
@@ -138,6 +138,8 @@ def run_synthesis(
         summarizer = StorySummarizer(llm_client)
         results = []
         skipped = 0
+        # Track URLs of stories synthesized in this batch for intra-batch dedup
+        batch_url_sets: list[set[str]] = []
 
         stories_to_process = multi_source[:limit] if limit else multi_source
         for story in stories_to_process:
@@ -148,25 +150,48 @@ def run_synthesis(
                 )
 
                 if cluster_urls:
+                    cluster_url_set = set(cluster_urls)
+
+                    # Intra-batch dedup: skip if this story overlaps heavily
+                    # with something we already synthesized in this batch
+                    batch_dup = False
+                    for prev_urls in batch_url_sets:
+                        intersection = len(cluster_url_set & prev_urls)
+                        union = len(cluster_url_set | prev_urls)
+                        if union > 0 and intersection / union > 0.3:
+                            logger.info(
+                                "story_duplicate_in_batch",
+                                story_id=story.id,
+                                jaccard=round(intersection / union, 2),
+                            )
+                            batch_dup = True
+                            skipped += 1
+                            break
+                    if batch_dup:
+                        continue
+
                     existing = os_client.find_overlapping_synthesis(cluster_urls)
                     if existing:
                         jaccard = existing.get("jaccard", 0)
                         existing_urls = set(existing.get("article_urls", []))
-                        new_urls = set(cluster_urls) - existing_urls
+                        new_urls = cluster_url_set - existing_urls
 
-                        if jaccard > 0.8 and not new_urls:
-                            # Story unchanged — skip
+                        # Any overlap above 0.3 means it's the same event.
+                        # Only re-synthesize if there are 3+ genuinely new
+                        # articles (meaningful new coverage), otherwise skip.
+                        if jaccard > 0.3 and len(new_urls) < 3:
                             logger.info(
                                 "story_unchanged",
                                 story_id=story.id,
                                 existing_id=existing["story_id"],
                                 jaccard=round(jaccard, 2),
+                                new_articles=len(new_urls),
                             )
                             skipped += 1
                             continue
 
-                        if new_urls:
-                            # Story has evolved — re-synthesize and mark old as historical
+                        if len(new_urls) >= 3:
+                            # Story has meaningfully evolved — re-synthesize
                             logger.info(
                                 "story_evolved",
                                 story_id=story.id,
@@ -182,6 +207,9 @@ def run_synthesis(
                 if synthesized:
                     synthesized.edition = edition
                     results.append(synthesized)
+                    # Track for intra-batch dedup
+                    if cluster_urls:
+                        batch_url_sets.append(set(cluster_urls))
             except Exception as e:
                 logger.error(
                     "story_synthesis_error",
@@ -375,6 +403,7 @@ def daemon_mode(interval_minutes: int, stories_per_column: int, render_and_deplo
         model=config.llm.model,
         temperature=config.llm.temperature,
         max_tokens=config.llm.max_tokens,
+        context_length=config.llm.context_length,
     )
 
     if not llm_client.health_check():
@@ -466,6 +495,7 @@ def main() -> None:
             model=config.llm.model,
             temperature=config.llm.temperature,
             max_tokens=config.llm.max_tokens,
+            context_length=config.llm.context_length,
         )
 
         try:

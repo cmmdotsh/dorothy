@@ -127,6 +127,73 @@ class StoryGrouper:
         )
         return clusterer.fit_predict(distance_matrix)
 
+    def _merge_similar_clusters(
+        self,
+        articles: list[dict],
+        labels: np.ndarray,
+        merge_threshold: float = 0.15,
+    ) -> np.ndarray:
+        """
+        Merge clusters whose centroids are within merge_threshold cosine distance.
+
+        This catches cases where HDBSCAN splits articles about the same event
+        into separate clusters due to slight framing differences.
+
+        Args:
+            articles: List of article dicts with embeddings
+            labels: HDBSCAN cluster labels (-1 = noise)
+            merge_threshold: Max cosine distance to merge (default 0.15 ≈ 0.85 similarity)
+
+        Returns:
+            Updated label array with merged clusters
+        """
+        labels = labels.copy()
+        cluster_ids = sorted(set(labels) - {-1})
+
+        if len(cluster_ids) < 2:
+            return labels
+
+        # Compute centroid for each cluster
+        centroids = {}
+        for cid in cluster_ids:
+            mask = labels == cid
+            embeddings = np.array([a["embedding"] for a, m in zip(articles, mask) if m])
+            centroids[cid] = embeddings.mean(axis=0)
+
+        # Build centroid distance matrix and greedily merge
+        centroid_list = list(centroids.keys())
+        centroid_matrix = np.array([centroids[c] for c in centroid_list])
+        dist_matrix = cosine_distances(centroid_matrix)
+
+        # Union-find for merging
+        parent = {c: c for c in centroid_list}
+
+        def find(x):
+            while parent[x] != x:
+                parent[x] = parent[parent[x]]
+                x = parent[x]
+            return x
+
+        for i in range(len(centroid_list)):
+            for j in range(i + 1, len(centroid_list)):
+                if dist_matrix[i, j] < merge_threshold:
+                    ri, rj = find(centroid_list[i]), find(centroid_list[j])
+                    if ri != rj:
+                        parent[rj] = ri
+                        logger.info(
+                            "merging_clusters",
+                            cluster_a=centroid_list[i],
+                            cluster_b=centroid_list[j],
+                            cosine_distance=round(float(dist_matrix[i, j]), 4),
+                        )
+
+        # Relabel
+        for idx in range(len(labels)):
+            if labels[idx] != -1:
+                labels[idx] = find(labels[idx])
+
+        return labels
+
     def _labels_to_stories(
         self,
         articles: list[dict],
@@ -211,6 +278,9 @@ class StoryGrouper:
         # Run HDBSCAN
         logger.debug("running_hdbscan")
         labels = self._run_hdbscan(distances)
+
+        # Merge clusters whose centroids are very similar
+        labels = self._merge_similar_clusters(articles_with_embeddings, labels)
 
         # Convert to stories
         stories = self._labels_to_stories(articles_with_embeddings, labels)

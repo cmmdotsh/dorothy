@@ -11,6 +11,8 @@ Usage:
 """
 
 import argparse
+import hashlib
+import re
 import shutil
 from pathlib import Path
 from datetime import datetime, timezone
@@ -95,16 +97,77 @@ class StaticSiteGenerator:
         (self.output_dir / "static").mkdir(exist_ok=True)
 
     def copy_static_assets(self) -> None:
-        """Copy static files to output."""
-        if self.static_dir.exists():
-            for file in self.static_dir.iterdir():
-                if file.is_file():
-                    shutil.copy(file, self.output_dir / "static" / file.name)
-            console.print(f"[green]  Copied static assets[/green]")
+        """Copy static files to output with content-hashed filenames for CSS/JS."""
+        self.assets = {}
+        hash_files = {"style.css", "app.js"}
+
+        if not self.static_dir.exists():
+            return
+
+        # Hash CSS and JS files
+        for name in hash_files:
+            src = self.static_dir / name
+            if not src.exists():
+                continue
+            content = src.read_bytes()
+            file_hash = hashlib.md5(content).hexdigest()[:8]
+            stem, ext = name.rsplit(".", 1)
+            hashed_name = f"{stem}.{file_hash}.{ext}"
+            shutil.copy(src, self.output_dir / "static" / hashed_name)
+            self.assets[name] = hashed_name
+
+        # Build a combined hash for the cache name
+        cache_hash = hashlib.md5("".join(sorted(self.assets.values())).encode()).hexdigest()[:8]
+
+        # Process sw.js — inject hashed CACHE_NAME and PRECACHE_URLS
+        sw_src = self.static_dir / "sw.js"
+        if sw_src.exists():
+            sw_content = sw_src.read_text()
+            sw_content = re.sub(
+                r"const CACHE_NAME = '[^']*'",
+                f"const CACHE_NAME = 'dorothy-{cache_hash}'",
+                sw_content,
+            )
+            precache = [
+                "'/'",
+                f"'/static/{self.assets.get('style.css', 'style.css')}'",
+                f"'/static/{self.assets.get('app.js', 'app.js')}'",
+                "'/static/manifest.json'",
+            ]
+            sw_content = re.sub(
+                r"const PRECACHE_URLS = \[.*?\];",
+                "const PRECACHE_URLS = [\n  " + ",\n  ".join(precache) + "\n];",
+                sw_content,
+                flags=re.DOTALL,
+            )
+            (self.output_dir / "static" / "sw.js").write_text(sw_content)
+
+        # Copy remaining static files as-is (skip already-handled ones)
+        handled = hash_files | {"sw.js"}
+        for file in self.static_dir.iterdir():
+            if file.is_file() and file.name not in handled:
+                shutil.copy(file, self.output_dir / "static" / file.name)
+
+        # Make assets available to templates
+        self.env.globals["assets"] = self.assets
+
+        console.print(f"[green]  Copied static assets (hashed: {', '.join(self.assets.values())})[/green]")
+
+    def _backfill_image_credit(self, story: dict) -> dict:
+        """Derive hero_image_source from articles if not already set."""
+        if story.get("hero_image_source") or not story.get("hero_image_url"):
+            return story
+        hero_url = story["hero_image_url"]
+        for article in story.get("articles", []):
+            if article.get("image_url") == hero_url:
+                story["hero_image_source"] = article.get("source_name", "")
+                break
+        return story
 
     def get_stories_for_column(self, column: str, limit: int = 20) -> list[dict]:
         """Get synthesized stories for a column."""
-        return self.os_client.get_syntheses(column=column, limit=limit)
+        stories = self.os_client.get_syntheses(column=column, limit=limit)
+        return [self._backfill_image_credit(s) for s in stories]
 
     def get_all_stories(self) -> list[dict]:
         """Get all synthesized stories across all columns."""
@@ -174,7 +237,8 @@ class StaticSiteGenerator:
         # Group stories by column for navigation
         stories_by_column = {}
         for column in COLUMNS:
-            stories_by_column[column] = self.os_client.get_syntheses(column=column, limit=100)
+            stories = self.os_client.get_syntheses(column=column, limit=100)
+            stories_by_column[column] = [self._backfill_image_credit(s) for s in stories]
 
         rendered = 0
 

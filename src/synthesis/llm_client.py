@@ -1,5 +1,6 @@
 """LLM client for story synthesis via LMStudio."""
 
+import time
 from typing import Optional
 
 import httpx
@@ -23,7 +24,8 @@ class LLMClient:
     """
     Client for generating text via LMStudio's OpenAI-compatible API.
 
-    LMStudio exposes an OpenAI-compatible /v1/chat/completions endpoint.
+    Manages model lifecycle: ensures the model is loaded with the correct
+    context length before synthesis, and prevents auto-unload via ttl=-1.
     """
 
     def __init__(
@@ -31,7 +33,8 @@ class LLMClient:
         base_url: str = "http://192.168.0.149:1234",
         model: str = "qwen/qwen3-next-80b",
         temperature: float = 0.3,
-        max_tokens: int = 1500,
+        max_tokens: int = 4096,
+        context_length: int = 32768,
         timeout: float = 600.0,
     ):
         self.base_url = base_url.rstrip("/")
@@ -39,9 +42,11 @@ class LLMClient:
         self.model = model
         self.temperature = temperature
         self.max_tokens = max_tokens
+        self.context_length = context_length
         self.timeout = timeout
         self._client: Optional[httpx.Client] = None
         self._max_context_length: Optional[int] = None
+        self._model_verified = False
 
     @property
     def client(self) -> httpx.Client:
@@ -56,28 +61,125 @@ class LLMClient:
             self._client.close()
             self._client = None
 
+    def _get_loaded_model_info(self) -> Optional[dict]:
+        """Check if our model is currently loaded and return its config."""
+        try:
+            response = self.client.get(f"{self.base_url}/api/v1/models")
+            response.raise_for_status()
+            data = response.json()
+
+            for model in data.get("models", []):
+                if model.get("key") == self.model:
+                    instances = model.get("loaded_instances", [])
+                    if instances:
+                        return instances[0]
+            return None
+        except Exception as e:
+            logger.debug("model_info_check_failed", error=str(e))
+            return None
+
+    def _load_model(self) -> bool:
+        """Load the model via LMStudio API with our desired context length."""
+        try:
+            logger.info(
+                "loading_model",
+                model=self.model,
+                context_length=self.context_length,
+            )
+            response = self.client.post(
+                f"{self.base_url}/api/v1/models/load",
+                json={
+                    "model": self.model,
+                    "context_length": self.context_length,
+                    "echo_load_config": True,
+                },
+            )
+            response.raise_for_status()
+            data = response.json()
+
+            load_config = data.get("load_config", {})
+            loaded_ctx = load_config.get("context_length", 0)
+            load_time = data.get("load_time_seconds", 0)
+
+            logger.info(
+                "model_loaded",
+                model=self.model,
+                context_length=loaded_ctx,
+                load_time_seconds=round(load_time, 1),
+            )
+
+            self._max_context_length = loaded_ctx
+            return True
+        except Exception as e:
+            logger.error("model_load_failed", model=self.model, error=str(e))
+            return False
+
+    def _unload_model(self) -> bool:
+        """Unload the model via LMStudio API."""
+        try:
+            response = self.client.post(
+                f"{self.base_url}/api/v1/models/unload",
+                json={"instance_id": self.model},
+            )
+            response.raise_for_status()
+            logger.info("model_unloaded", model=self.model)
+            return True
+        except Exception as e:
+            logger.error("model_unload_failed", model=self.model, error=str(e))
+            return False
+
+    def ensure_model_loaded(self) -> bool:
+        """Ensure the model is loaded with the correct context length.
+
+        Checks current state and loads/reloads as needed.
+        """
+        instance = self._get_loaded_model_info()
+
+        if instance:
+            loaded_ctx = instance.get("config", {}).get("context_length", 0)
+
+            if loaded_ctx == self.context_length:
+                if not self._model_verified:
+                    logger.info(
+                        "model_already_loaded",
+                        model=self.model,
+                        context_length=loaded_ctx,
+                    )
+                    self._model_verified = True
+                self._max_context_length = loaded_ctx
+                return True
+
+            # Loaded but with wrong context — reload
+            logger.warning(
+                "model_context_mismatch",
+                model=self.model,
+                loaded=loaded_ctx,
+                desired=self.context_length,
+            )
+            self._unload_model()
+
+        # Not loaded — load it
+        self._model_verified = False
+        return self._load_model()
+
     def generate(
         self,
         prompt: str,
         system_prompt: Optional[str] = None,
         temperature: Optional[float] = None,
         max_tokens: Optional[int] = None,
+        response_format: Optional[dict] = None,
     ) -> str:
         """
         Generate text completion.
 
-        Args:
-            prompt: The user prompt
-            system_prompt: Optional system prompt
-            temperature: Override default temperature
-            max_tokens: Override default max_tokens
-
-        Returns:
-            Generated text
-
-        Raises:
-            LLMError: If the API call fails
+        Ensures model is loaded before generating. Passes ttl=-1 to
+        prevent LMStudio from auto-unloading the model between requests.
         """
+        # Ensure model is loaded with correct settings
+        if not self._model_verified:
+            self.ensure_model_loaded()
+
         messages = []
 
         if system_prompt:
@@ -85,112 +187,107 @@ class LLMClient:
 
         messages.append({"role": "user", "content": prompt})
 
-        try:
-            response = self.client.post(
-                self.endpoint,
-                json={
-                    "model": self.model,
-                    "messages": messages,
-                    "temperature": temperature or self.temperature,
-                    "max_tokens": max_tokens or self.max_tokens,
-                },
-            )
-            response.raise_for_status()
+        max_retries = 3
+        request_json = {
+            "model": self.model,
+            "messages": messages,
+            "temperature": temperature or self.temperature,
+            "max_tokens": max_tokens or self.max_tokens,
+            "ttl": -1,
+        }
+        if response_format is not None:
+            request_json["response_format"] = response_format
 
-            data = response.json()
-            content = data["choices"][0]["message"]["content"]
-
-            logger.debug(
-                "llm_generation_complete",
-                prompt_length=len(prompt),
-                response_length=len(content),
-            )
-
-            return content
-
-        except httpx.HTTPStatusError as e:
-            # Log the response body — LMStudio includes useful error details
-            body = ""
+        for attempt in range(1, max_retries + 1):
             try:
-                body = e.response.text[:500]
-            except Exception:
-                pass
-            logger.error(
-                "llm_api_error",
-                status=e.response.status_code,
-                error=str(e),
-                response_body=body,
-            )
-            raise LLMError(f"API error: {e.response.status_code} — {body}") from e
-        except httpx.RequestError as e:
-            logger.error("llm_request_error", error=str(e))
-            raise LLMError(f"Request failed: {e}") from e
-        except (KeyError, TypeError, IndexError) as e:
-            logger.error("llm_parse_error", error=str(e))
-            raise LLMError(f"Failed to parse response: {e}") from e
+                response = self.client.post(self.endpoint, json=request_json)
+                response.raise_for_status()
+
+                data = response.json()
+                content = data["choices"][0]["message"]["content"]
+
+                logger.debug(
+                    "llm_generation_complete",
+                    prompt_length=len(prompt),
+                    response_length=len(content),
+                )
+
+                return content
+
+            except httpx.HTTPStatusError as e:
+                body = ""
+                try:
+                    body = e.response.text[:500]
+                except Exception:
+                    pass
+
+                # Model unloaded — reload and retry immediately
+                if "Model unloaded" in body or "context length" in body.lower():
+                    logger.warning("model_lost_mid_session", error=body)
+                    self._model_verified = False
+                    self.ensure_model_loaded()
+
+                # Transient model crash — wait and retry
+                if attempt < max_retries:
+                    delay = 10 * attempt
+                    logger.warning(
+                        "llm_retrying",
+                        attempt=attempt,
+                        max_retries=max_retries,
+                        delay=delay,
+                        status=e.response.status_code,
+                        error_body=body[:200],
+                    )
+                    time.sleep(delay)
+                    self._model_verified = False
+                    self.ensure_model_loaded()
+                    continue
+
+                logger.error(
+                    "llm_api_error",
+                    status=e.response.status_code,
+                    error=str(e),
+                    response_body=body,
+                )
+                raise LLMError(f"API error: {e.response.status_code} — {body}") from e
+
+            except httpx.RequestError as e:
+                if attempt < max_retries:
+                    delay = 10 * attempt
+                    logger.warning(
+                        "llm_retrying",
+                        attempt=attempt,
+                        max_retries=max_retries,
+                        delay=delay,
+                        error=str(e),
+                    )
+                    time.sleep(delay)
+                    continue
+
+                logger.error("llm_request_error", error=str(e))
+                raise LLMError(f"Request failed: {e}") from e
+
+            except (KeyError, TypeError, IndexError) as e:
+                logger.error("llm_parse_error", error=str(e))
+                raise LLMError(f"Failed to parse response: {e}") from e
 
     def get_max_context_length(self) -> int:
-        """
-        Get the model's actual loaded context length from LMStudio.
+        """Get the model's loaded context length.
 
-        LMStudio's model info endpoint returns `max_context_length` which is the
-        theoretical maximum, NOT the actual loaded context. The real loaded context
-        is returned in `model_info.context_length` inside completion responses.
-
-        We do a tiny completion to discover the true loaded value.
-        Falls back to the model info endpoint, then a conservative default.
+        Uses the known context_length from our load config, since we
+        control the model lifecycle via ensure_model_loaded().
         """
         if self._max_context_length is not None:
             return self._max_context_length
 
-        # Strategy 1: Do a tiny completion and read model_info.context_length
-        try:
-            response = self.client.post(
-                self.endpoint,
-                json={
-                    "model": self.model,
-                    "messages": [{"role": "user", "content": "hi"}],
-                    "max_tokens": 1,
-                },
-            )
-            response.raise_for_status()
-            data = response.json()
-            model_info = data.get("model_info", {})
-            loaded_ctx = model_info.get("context_length")
-
-            if loaded_ctx and loaded_ctx > 0:
-                self._max_context_length = loaded_ctx
-                logger.info(
-                    "model_context_length",
-                    model=self.model,
-                    loaded_context_length=self._max_context_length,
-                    source="completion_model_info",
-                )
-                return self._max_context_length
-        except Exception as e:
-            logger.debug("context_probe_failed", error=str(e))
-
-        # Strategy 2: Fall back to model info endpoint (may be theoretical max)
-        try:
-            response = self.client.get(f"{self.base_url}/api/v0/models/{self.model}")
-            response.raise_for_status()
-            data = response.json()
-            self._max_context_length = data.get("max_context_length", 32768)
-            logger.warning(
-                "using_theoretical_context_length",
-                model=self.model,
-                max_context_length=self._max_context_length,
-                msg="Could not determine actual loaded context; using model max which may be too large",
-            )
+        # Make sure model is loaded so we know the actual context
+        self.ensure_model_loaded()
+        if self._max_context_length:
             return self._max_context_length
-        except Exception as e:
-            logger.warning(
-                "failed_to_get_context_length",
-                error=str(e),
-                fallback=32768,
-            )
-            self._max_context_length = 32768
-            return self._max_context_length
+
+        # Fallback
+        self._max_context_length = self.context_length
+        return self._max_context_length
 
     def get_prompt_token_budget(self) -> int:
         """
@@ -214,8 +311,12 @@ class LLMClient:
         return int(len(text) / CHARS_PER_TOKEN)
 
     def health_check(self) -> bool:
-        """Check if the LLM service is reachable."""
+        """Check if the LLM service is reachable and model loads correctly."""
         try:
+            if not self.ensure_model_loaded():
+                logger.error("health_check_model_load_failed", model=self.model)
+                return False
+
             result = self.generate("Say 'ok' if you can read this.", max_tokens=10)
             if result:
                 logger.info("llm_service_healthy", model=self.model)

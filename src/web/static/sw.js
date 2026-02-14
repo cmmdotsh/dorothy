@@ -1,5 +1,5 @@
 // Service Worker for Dorothy PWA
-const CACHE_NAME = 'dorothy-v1';
+const CACHE_NAME = 'dorothy-v3';
 const RUNTIME_CACHE = 'dorothy-runtime';
 
 // Cache essential assets on install
