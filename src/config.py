@@ -67,6 +67,24 @@ class LLMSettings(BaseSettings):
         env_prefix = "LLM_"
 
 
+class PodcastSettings(BaseSettings):
+    """Podcast generation settings."""
+
+    enabled: bool = False
+    voice_ref: str = "config/voices/default.wav"
+    tts_device: str = "cpu"
+    tts_workers: int = 1
+    story_count: int = 5
+    target_wpm: int = 150
+    output_format: str = "mp3"
+    bitrate: str = "128k"
+    hf_fallback: bool = False
+    hf_token: str = ""
+
+    class Config:
+        env_prefix = "PODCAST_"
+
+
 class DorothyConfig:
     """Main configuration class for Dorothy."""
 
@@ -77,6 +95,7 @@ class DorothyConfig:
         self.scheduler = SchedulerSettings()
         self.embedding = EmbeddingSettings()
         self.llm = LLMSettings()
+        self.podcast = PodcastSettings()
         self._sources: list[Source] = []
 
     def load_sources(self) -> list[Source]:
