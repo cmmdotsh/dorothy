@@ -16,6 +16,11 @@ hourly news updates.
 Guidelines:
 - Use short, declarative sentences in active voice and present tense
 - Write for the ear, not the eye: no parentheses, abbreviations, or complex clauses
+- Spell out EVERYTHING — this script is read by text-to-speech. Never use abbreviations, \
+acronyms, initialisms, or symbols. Write "percent" not "%", "dollars" not "$", \
+"United States" not "US" or "U.S.", "versus" not "vs.", "million" not "M", \
+"Chief Executive Officer" on first use then "C.E.O." with periods between letters, etc. \
+Numbers under 100 should be written as words. Dates should be fully written out.
 - Each story body should be 120-150 words (about 50-60 seconds at broadcast pace)
 - Use natural transitions between stories ("Turning to...", "In other news...", "Meanwhile...")
 - Do not mention the number of outlets or sources covering a story
@@ -51,12 +56,26 @@ def _format_story_for_prompt(story: dict, index: int) -> str:
     if len(words) > 300:
         article = " ".join(words[:300]) + "..."
 
-    bias_str = ", ".join(f"{k}: {v}" for k, v in bias_coverage.items() if v)
+    REGION_LABELS = {
+        "us": "US", "canada": "Canada", "mexico": "Mexico",
+        "uk": "UK", "australia": "Australia", "india": "India",
+        "japan": "Japan", "korea": "Korea", "international": "Intl",
+    }
+
+    column = story.get("_column", story.get("column", ""))
+    if column == "sports":
+        coverage_str = ", ".join(
+            f"{REGION_LABELS.get(k, k)}: {v}" for k, v in bias_coverage.items() if v
+        )
+        coverage_label = "Regions"
+    else:
+        coverage_str = ", ".join(f"{k}: {v}" for k, v in bias_coverage.items() if v)
+        coverage_label = "Coverage"
 
     return (
         f"### Story {index + 1}: {headline}\n"
         f"Article: {article}\n"
-        f"Sources: {article_count} outlets | Coverage: {bias_str}"
+        f"Sources: {article_count} outlets | {coverage_label}: {coverage_str}"
     )
 
 

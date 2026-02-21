@@ -17,6 +17,17 @@
     --bias-center: #a855f7;
     --bias-lean-right: #f97316;
     --bias-right: #ef4444;
+
+    /* Region colors (sports) */
+    --region-us: #3b82f6;
+    --region-canada: #ef4444;
+    --region-mexico: #22c55e;
+    --region-uk: #6366f1;
+    --region-australia: #eab308;
+    --region-india: #f97316;
+    --region-japan: #ec4899;
+    --region-korea: #14b8a6;
+    --region-international: #8b5cf6;
 }
 
 * {
@@ -540,7 +551,8 @@ time.timeago-full {
     margin: 0.75rem 0;
 }
 
-.bias-pill {
+.bias-pill,
+.region-pill {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     font-size: 0.65rem;
     font-weight: 600;
@@ -1070,6 +1082,290 @@ time.timeago-full {
         font-size: 0.7rem;
     }
 }
+/* ========================================
+   PODCAST PLAYER STRIP (Front Page)
+======================================== */
+.podcast-strip {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    background: var(--text-primary);
+    color: #fff;
+    padding: 0.6rem 1.25rem;
+    margin-bottom: 1.5rem;
+    border-radius: 2px;
+}
+
+.ps-play-btn {
+    background: none;
+    border: 2px solid rgba(255, 255, 255, 0.6);
+    color: #fff;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    cursor: pointer;
+    font-size: 0.75rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: border-color 0.15s;
+    padding: 0 0 0 2px;
+}
+
+.ps-play-btn:hover {
+    border-color: #fff;
+}
+
+.ps-info {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    flex-shrink: 0;
+}
+
+.ps-title {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 0.75rem;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.ps-archive {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 0.6rem;
+    color: rgba(255, 255, 255, 0.6);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+}
+
+.ps-archive:hover {
+    color: #fff;
+    text-decoration: none;
+}
+
+.ps-progress-wrap {
+    flex: 1;
+    height: 4px;
+    background: rgba(255, 255, 255, 0.2);
+    cursor: pointer;
+    border-radius: 2px;
+    min-width: 60px;
+}
+
+.ps-progress-bar {
+    height: 100%;
+    background: #fff;
+    border-radius: 2px;
+    width: 0%;
+    transition: width 0.1s linear;
+}
+
+.ps-time {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 0.7rem;
+    color: rgba(255, 255, 255, 0.7);
+    flex-shrink: 0;
+    min-width: 3em;
+    text-align: right;
+}
+
+/* ========================================
+   PODCAST ARCHIVE PAGE
+======================================== */
+.podcast-page {
+    max-width: 800px;
+    margin: 0 auto;
+    background: var(--bg-secondary);
+    padding: 2rem;
+    border: 1px solid var(--border-color);
+}
+
+.podcast-page .section-title {
+    font-size: 2rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 1.5rem;
+    padding-bottom: 1rem;
+    border-bottom: 3px solid var(--border-dark);
+}
+
+.podcast-featured {
+    margin-bottom: 1.5rem;
+}
+
+.featured-title {
+    font-size: 1.25rem;
+    font-weight: 600;
+    margin-bottom: 0.75rem;
+}
+
+.podcast-player {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    background: var(--bg-primary);
+    padding: 0.75rem 1rem;
+    border: 1px solid var(--border-color);
+}
+
+.player-play-btn {
+    background: var(--text-primary);
+    border: none;
+    color: #fff;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    cursor: pointer;
+    font-size: 0.8rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    padding: 0 0 0 2px;
+    transition: background 0.15s;
+}
+
+.player-play-btn:hover {
+    background: var(--accent-hover);
+}
+
+.player-progress-wrap {
+    flex: 1;
+    height: 6px;
+    background: var(--border-color);
+    cursor: pointer;
+    border-radius: 3px;
+}
+
+.player-progress-bar {
+    height: 100%;
+    background: var(--text-primary);
+    border-radius: 3px;
+    width: 0%;
+    transition: width 0.1s linear;
+}
+
+.player-time {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    flex-shrink: 0;
+    min-width: 3em;
+    text-align: right;
+}
+
+.podcast-subscribe {
+    margin-bottom: 1.5rem;
+}
+
+.subscribe-link {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-primary);
+    border: 1px solid var(--border-dark);
+    padding: 0.4rem 0.8rem;
+    display: inline-block;
+}
+
+.subscribe-link:hover {
+    background: var(--text-primary);
+    color: #fff;
+    text-decoration: none;
+}
+
+.archive-heading {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 0.85rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin-bottom: 1rem;
+    color: var(--text-secondary);
+}
+
+.episode-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 0.85rem;
+}
+
+.episode-table th {
+    text-align: left;
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--text-muted);
+    padding: 0.5rem 0.75rem;
+    border-bottom: 2px solid var(--border-dark);
+}
+
+.episode-table td {
+    padding: 0.6rem 0.75rem;
+    border-bottom: 1px solid var(--border-color);
+    vertical-align: middle;
+}
+
+.ep-date {
+    white-space: nowrap;
+    color: var(--text-muted);
+    font-size: 0.8rem;
+}
+
+.ep-duration {
+    white-space: nowrap;
+    color: var(--text-muted);
+    text-align: center;
+}
+
+.play-link {
+    font-weight: 600;
+    font-size: 0.8rem;
+    white-space: nowrap;
+}
+
+/* ========================================
+   PODCAST RESPONSIVE
+======================================== */
+@media (max-width: 600px) {
+    .podcast-strip {
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        padding: 0.5rem 0.75rem;
+    }
+
+    .ps-info {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .ps-progress-wrap {
+        flex-basis: 100%;
+        order: 10;
+    }
+
+    .ps-time {
+        order: 11;
+    }
+
+    .podcast-page {
+        padding: 1rem;
+    }
+
+    .episode-table th:first-child,
+    .episode-table td:first-child {
+        display: none;
+    }
+}
+
 /* ========================================
    MOBILE STORY NAVIGATION (PWA)
 ======================================== */

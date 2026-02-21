@@ -1,5 +1,6 @@
 """Story grouping using HDBSCAN density clustering."""
 
+import hashlib
 from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Optional
@@ -12,6 +13,13 @@ import structlog
 from src.storage import OpenSearchClient
 
 logger = structlog.get_logger(__name__)
+
+
+def _make_story_id(articles: list[dict]) -> str:
+    """Deterministic story ID from sorted article URLs."""
+    urls = sorted(str(a.get("url", a.get("id", ""))) for a in articles)
+    url_hash = hashlib.sha256("\n".join(urls).encode()).hexdigest()[:12]
+    return f"story-{url_hash}"
 
 
 @dataclass
@@ -39,6 +47,23 @@ class Story:
             bias = article.get("source_bias", "unknown")
             spread[bias] += 1
         return dict(spread)
+
+    @property
+    def region_spread(self) -> dict[str, int]:
+        """Count of articles by geographic region."""
+        spread: dict[str, int] = defaultdict(int)
+        for article in self.articles:
+            region = article.get("source_region", "unknown")
+            spread[region] += 1
+        return dict(spread)
+
+    @property
+    def coverage_spread(self) -> dict[str, int]:
+        """Region spread for sports stories, bias spread otherwise."""
+        is_sports = any(
+            article.get("column") == "sports" for article in self.articles
+        )
+        return self.region_spread if is_sports else self.bias_spread
 
     def to_dict(self) -> dict:
         """Convert to dictionary representation."""
@@ -223,7 +248,7 @@ class StoryGrouper:
         # Create stories from clusters
         for label, cluster_articles in clusters.items():
             story = Story(
-                id=f"story-{cluster_articles[0]['id'][:8]}",
+                id=_make_story_id(cluster_articles),
                 articles=cluster_articles,
             )
             stories.append(story)
@@ -231,7 +256,7 @@ class StoryGrouper:
         # Create single-article stories from noise (won't be synthesized due to source_count < 2)
         for article in noise_articles:
             story = Story(
-                id=f"story-{article['id'][:8]}",
+                id=_make_story_id([article]),
                 articles=[article],
             )
             stories.append(story)
@@ -264,7 +289,7 @@ class StoryGrouper:
         if len(articles_with_embeddings) < self.min_cluster_size:
             # Not enough articles for clustering
             return [
-                Story(id=f"story-{a['id'][:8]}", articles=[a])
+                Story(id=_make_story_id([a]), articles=[a])
                 for a in articles_with_embeddings
             ]
 

@@ -61,6 +61,7 @@ SYNTHESIS_MAPPING = {
                     "source_name": {"type": "keyword"},
                     "source_slug": {"type": "keyword"},
                     "source_bias": {"type": "keyword"},
+                    "source_region": {"type": "keyword"},
                     "image_url": {"type": "keyword"},
                 },
             },
@@ -83,6 +84,7 @@ ARTICLE_MAPPING = {
             "source_name": {"type": "keyword"},
             "source_slug": {"type": "keyword"},
             "source_bias": {"type": "keyword"},
+            "source_region": {"type": "keyword"},
             "column": {"type": "keyword"},
             "headline": {
                 "type": "text",
@@ -643,16 +645,24 @@ class OpenSearchClient:
 
     # Synthesis deduplication methods
 
-    def find_overlapping_synthesis(self, article_urls: list[str]) -> Optional[dict]:
+    def find_overlapping_synthesis(
+        self, article_urls: list[str], column: Optional[str] = None
+    ) -> Optional[dict]:
         """Find an existing current synthesis whose articles overlap significantly.
 
-        Uses a terms query on article_urls, then computes Jaccard similarity
-        in Python. Returns the best match (highest overlap) or None.
+        Phase 1: terms query on article_urls (fast, catches direct URL overlap).
+        Phase 2: If Phase 1 finds nothing and column is provided, fetch all current
+                 syntheses for the column and compute Jaccard in Python.
+
+        Returns the best match (highest overlap) or None.
         """
         try:
             if not self.client.indices.exists(index=SYNTHESIS_INDEX):
                 return None
 
+            new_set = set(article_urls)
+
+            # Phase 1: Direct URL overlap via terms query
             body = {
                 "query": {
                     "bool": {
@@ -669,14 +679,45 @@ class OpenSearchClient:
             response = self.client.search(index=SYNTHESIS_INDEX, body=body)
             hits = response["hits"]["hits"]
 
-            if not hits:
-                return None
-
-            new_set = set(article_urls)
             best_match = None
             best_jaccard = 0.0
 
             for hit in hits:
+                existing_urls = set(hit["_source"].get("article_urls", []))
+                if not existing_urls:
+                    continue
+                intersection = len(new_set & existing_urls)
+                union = len(new_set | existing_urls)
+                jaccard = intersection / union if union > 0 else 0.0
+
+                if jaccard > best_jaccard:
+                    best_jaccard = jaccard
+                    best_match = {**hit["_source"], "jaccard": jaccard}
+
+            if best_match:
+                return best_match
+
+            # Phase 2: Column-wide scan when no direct URL overlap found
+            if not column:
+                return None
+
+            col_body = {
+                "query": {
+                    "bool": {
+                        "must": [
+                            {"term": {"column": column}},
+                            {"term": {"is_current": True}},
+                        ]
+                    }
+                },
+                "size": 200,
+                "_source": ["story_id", "article_urls", "article_count", "generated_headline"],
+            }
+
+            col_response = self.client.search(index=SYNTHESIS_INDEX, body=col_body)
+            col_hits = col_response["hits"]["hits"]
+
+            for hit in col_hits:
                 existing_urls = set(hit["_source"].get("article_urls", []))
                 if not existing_urls:
                     continue

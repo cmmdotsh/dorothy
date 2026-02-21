@@ -39,11 +39,19 @@
 
             {% if story.bias_coverage %}
             <div class="bias-breakdown">
-                {% for bias, count in story.bias_coverage.items() %}
-                <span class="bias-pill" style="background: {{ bias_colors.get(bias, '#888') }}">
-                    {{ bias|title }}: {{ count }}
-                </span>
-                {% endfor %}
+                {% if column == 'sports' %}
+                    {% for region, count in story.bias_coverage.items() %}
+                    <span class="bias-pill region-pill" style="background: {{ region_colors.get(region, '#888') }}">
+                        {{ region_labels.get(region, region|title) }}: {{ count }}
+                    </span>
+                    {% endfor %}
+                {% else %}
+                    {% for bias, count in story.bias_coverage.items() %}
+                    <span class="bias-pill" style="background: {{ bias_colors.get(bias, '#888') }}">
+                        {{ bias|title }}: {{ count }}
+                    </span>
+                    {% endfor %}
+                {% endif %}
             </div>
             {% endif %}
 

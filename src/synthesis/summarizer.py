@@ -19,6 +19,19 @@ logger = structlog.get_logger(__name__)
 
 BIAS_ORDER = ["left", "lean-left", "center", "lean-right", "right"]
 
+REGION_ORDER = ["us", "canada", "mexico", "uk", "australia", "india", "japan", "korea", "international"]
+REGION_LABELS = {
+    "us": "United States",
+    "canada": "Canada",
+    "mexico": "Mexico",
+    "uk": "United Kingdom",
+    "australia": "Australia",
+    "india": "India",
+    "japan": "Japan",
+    "korea": "South Korea",
+    "international": "International",
+}
+
 # ── Pass 1: Neutral Article ──
 
 ARTICLE_SYSTEM_PROMPT = """You are a senior wire service journalist. Your job is to write
@@ -45,6 +58,33 @@ Guidelines:
 - Identify differences in language, sourcing, and narrative framing
 - Be specific — cite outlet names and concrete examples
 - Don't just list differences; explain why they matter
+- Write in an analytical but accessible tone
+- Respond in JSON with an "analysis" field"""
+
+# ── Sports-specific prompts ──
+
+SPORTS_ARTICLE_SYSTEM_PROMPT = """You are a senior sports journalist. Your job is to write
+clear, factual, comprehensive sports articles from multiple source reports around the world.
+
+Guidelines:
+- Write in standard sports journalism style: lead with the key result or development,
+  then expanding detail in subsequent paragraphs
+- Use neutral, precise language — no editorializing or homerism
+- Note how different regions cover the same story when relevant
+- Include relevant context, stats, and background
+- Write as if this is the definitive account of the story
+- Respond in JSON with "headline" and "article" fields"""
+
+SPORTS_ANALYSIS_SYSTEM_PROMPT = """You are a sports media analyst who studies how outlets
+from different countries and regions cover the same sporting events differently. You
+identify meaningful patterns in emphasis, framing, and what stories get covered at all.
+
+Guidelines:
+- Focus on regional differences: what a US outlet emphasizes vs UK, vs Australia, etc.
+- Note which regions covered the story and which didn't
+- Identify differences in which athletes, teams, or angles get prominence
+- Be specific — cite outlet names, countries, and concrete examples
+- Explain why regional perspectives differ (national interest, local heroes, league relevance)
 - Write in an analytical but accessible tone
 - Respond in JSON with an "analysis" field"""
 
@@ -206,8 +246,12 @@ def compute_story_timing(articles: list[dict], now: Optional[datetime] = None) -
     hours_since_median = max(1.0, (now - median_date).total_seconds() / 3600)
     article_count = len(articles)
 
-    unique_biases = len(set(a.get("source_bias", "unknown") for a in articles))
-    source_diversity_bonus = 1.0 + 0.1 * max(0, unique_biases - 1)
+    is_sports = any(a.get("column") == "sports" for a in articles)
+    if is_sports:
+        unique_dims = len(set(a.get("source_region", "unknown") for a in articles))
+    else:
+        unique_dims = len(set(a.get("source_bias", "unknown") for a in articles))
+    source_diversity_bonus = 1.0 + 0.1 * max(0, unique_dims - 1)
 
     hotness = (article_count / hours_since_median) * source_diversity_bonus
 
@@ -237,6 +281,10 @@ class StorySummarizer:
             logger.info("token_budget_resolved", budget=self._token_budget)
         return self._token_budget
 
+    def _is_sports_story(self, story: Story) -> bool:
+        """Check if a story is from the sports column."""
+        return any(a.get("column") == "sports" for a in story.articles)
+
     def _group_articles_by_bias(self, story: Story) -> dict[str, list[dict]]:
         """Group story articles by bias rating."""
         by_bias: dict[str, list[dict]] = defaultdict(list)
@@ -244,6 +292,34 @@ class StorySummarizer:
             bias = article.get("source_bias", "unknown")
             by_bias[bias].append(article)
         return dict(by_bias)
+
+    def _group_articles_by_region(self, story: Story) -> dict[str, list[dict]]:
+        """Group story articles by geographic region."""
+        by_region: dict[str, list[dict]] = defaultdict(list)
+        for article in story.articles:
+            region = article.get("source_region", "unknown")
+            by_region[region].append(article)
+        return dict(by_region)
+
+    def _build_articles_text_by_region(
+        self,
+        by_region: dict[str, list[dict]],
+    ) -> str:
+        """Format source articles grouped by region into a text block."""
+        sections = []
+        for region in REGION_ORDER:
+            articles = by_region.get(region, [])
+            if not articles:
+                continue
+            formatted = "\n".join(self._format_article(a) for a in articles)
+            label = REGION_LABELS.get(region, region.upper())
+            sections.append(f"### {label}\n{formatted}")
+        # Include any unknown-region articles
+        unknown = by_region.get("unknown", [])
+        if unknown:
+            formatted = "\n".join(self._format_article(a) for a in unknown)
+            sections.append(f"### OTHER\n{formatted}")
+        return "\n\n".join(sections)
 
     def _format_article(self, article: dict) -> str:
         """Format a single article for the prompt."""
@@ -312,16 +388,28 @@ class StorySummarizer:
     def _build_prompt(self, story: Story) -> str:
         """
         Build the synthesis prompt, using all articles if they fit in the
-        token budget, otherwise sampling representative articles per bias bucket.
+        token budget, otherwise sampling representative articles per bucket.
+
+        Sports stories are grouped by region; all others by bias.
         """
-        by_bias = self._group_articles_by_bias(story)
+        is_sports = self._is_sports_story(story)
+
+        if is_sports:
+            by_bucket = self._group_articles_by_region(story)
+            build_text = self._build_articles_text_by_region
+            bucket_order = REGION_ORDER
+            system_prompt = SPORTS_ARTICLE_SYSTEM_PROMPT
+        else:
+            by_bucket = self._group_articles_by_bias(story)
+            build_text = self._build_articles_text
+            bucket_order = BIAS_ORDER
+            system_prompt = ARTICLE_SYSTEM_PROMPT
 
         # Try the full prompt first
-        full_articles_text = self._build_articles_text(by_bias)
-        # Estimate tokens for the full prompt (system + template + articles)
-        template_overhead = 200  # approximate chars for prompt template wrapper
+        full_articles_text = build_text(by_bucket)
+        template_overhead = 200
         full_tokens = self.llm.estimate_tokens(
-            ARTICLE_SYSTEM_PROMPT + full_articles_text
+            system_prompt + full_articles_text
         ) + int(template_overhead / 3.5)
 
         if full_tokens <= self.token_budget:
@@ -333,7 +421,7 @@ class StorySummarizer:
             )
             return full_articles_text
 
-        # Over budget — need to downsample via centroid-based representative sampling.
+        # Over budget — downsample
         logger.info(
             "token_budget_exceeded",
             story_id=story.id,
@@ -342,18 +430,17 @@ class StorySummarizer:
             budget=self.token_budget,
         )
 
-        # Start with a reasonable per-bucket cap and shrink if needed
-        bucket_count = sum(1 for b in BIAS_ORDER if b in by_bias)
+        bucket_count = sum(1 for b in bucket_order if b in by_bucket)
         max_per_bucket = max(1, self.token_budget // (bucket_count * 200))
 
         for cap in range(min(max_per_bucket, 20), 0, -1):
             sampled = {
-                bias: self._select_representative_articles(articles, cap)
-                for bias, articles in by_bias.items()
+                key: self._select_representative_articles(articles, cap)
+                for key, articles in by_bucket.items()
             }
-            articles_text = self._build_articles_text(sampled)
+            articles_text = build_text(sampled)
             estimated = self.llm.estimate_tokens(
-                ARTICLE_SYSTEM_PROMPT + articles_text
+                system_prompt + articles_text
             ) + int(template_overhead / 3.5)
 
             if estimated <= self.token_budget:
@@ -368,28 +455,30 @@ class StorySummarizer:
                 )
                 return articles_text
 
-        # Absolute fallback: 1 per bucket (should always fit)
+        # Absolute fallback: 1 per bucket
         sampled = {
-            bias: articles[:1]
-            for bias, articles in by_bias.items()
+            key: articles[:1]
+            for key, articles in by_bucket.items()
         }
-        return self._build_articles_text(sampled)
+        return build_text(sampled)
 
-    def _pick_hero_image(self, articles: list[dict]) -> tuple[Optional[str], Optional[str]]:
-        """Pick the best hero image from articles, preferring center sources.
+    def _pick_hero_image(self, articles: list[dict], is_sports: bool = False) -> tuple[Optional[str], Optional[str]]:
+        """Pick the best hero image from articles.
+
+        For non-sports: prefers center sources for neutral framing.
+        For sports: just picks the first available image.
 
         Returns:
             (image_url, source_name) tuple
         """
-        # Prefer images from center/lean sources for neutral framing
-        preference_order = ["center", "lean-left", "lean-right", "left", "right"]
+        if not is_sports:
+            preference_order = ["center", "lean-left", "lean-right", "left", "right"]
+            for bias in preference_order:
+                for article in articles:
+                    if article.get("source_bias") == bias and article.get("image_url"):
+                        return article["image_url"], article.get("source_name", "")
 
-        for bias in preference_order:
-            for article in articles:
-                if article.get("source_bias") == bias and article.get("image_url"):
-                    return article["image_url"], article.get("source_name", "")
-
-        # Fallback: first article with any image
+        # Fallback (or sports default): first article with any image
         for article in articles:
             if article.get("image_url"):
                 return article["image_url"], article.get("source_name", "")
@@ -405,6 +494,7 @@ class StorySummarizer:
                 "source_name": a.get("source_name", ""),
                 "source_slug": a.get("source_slug", ""),
                 "source_bias": a.get("source_bias", ""),
+                "source_region": a.get("source_region"),
                 "image_url": a.get("image_url"),
             }
             for a in articles
@@ -428,13 +518,33 @@ class StorySummarizer:
             logger.warning("story_single_source", story_id=story.id)
             return None
 
+        is_sports = self._is_sports_story(story)
+
         # _build_prompt returns the formatted source articles text,
         # already token-budget-aware (sampled if needed).
         articles_text = self._build_prompt(story)
 
+        # Select prompts based on column
+        if is_sports:
+            article_sys = SPORTS_ARTICLE_SYSTEM_PROMPT
+            analysis_sys = SPORTS_ANALYSIS_SYSTEM_PROMPT
+            analysis_focus = (
+                "Write a coverage analysis that examines how outlets from different regions "
+                "and countries covered this story.\n"
+                "Focus on regional differences in emphasis, framing, which athletes or teams "
+                "get prominence, and what was included or omitted.\n"
+            )
+        else:
+            article_sys = ARTICLE_SYSTEM_PROMPT
+            analysis_sys = ANALYSIS_SYSTEM_PROMPT
+            analysis_focus = (
+                "Write a coverage analysis that examines how different outlets covered this story.\n"
+                "Focus on meaningful differences in framing, emphasis, language, and what was\n"
+                "included or omitted by different sources.\n"
+            )
+
         try:
             # Pass 1: Generate neutral article
-            # Use f-string to avoid issues with {curly braces} in source content
             article_prompt = (
                 "Below are news reports covering the same story from multiple outlets.\n\n"
                 f"{articles_text}\n\n"
@@ -442,7 +552,7 @@ class StorySummarizer:
                 'Respond with a JSON object containing "headline" and "article" keys.'
             )
             article_response = self.llm.generate(
-                article_prompt, system_prompt=ARTICLE_SYSTEM_PROMPT,
+                article_prompt, system_prompt=article_sys,
             )
             parsed = _parse_llm_json(article_response)
             headline = parsed["headline"].strip()
@@ -455,7 +565,6 @@ class StorySummarizer:
             )
 
             # Pass 2: Generate coverage analysis (with article as context)
-            # Use % formatting to avoid issues with {curly braces} in LLM output
             analysis_prompt = (
                 "Here is a neutral article we produced from multiple sources:\n\n"
                 "---\n"
@@ -463,16 +572,13 @@ class StorySummarizer:
                 "---\n\n"
                 "And here are the original source reports it was based on:\n\n"
                 f"{articles_text}\n\n"
-                "Write a coverage analysis that examines how different outlets covered this story.\n"
-                "Focus on meaningful differences in framing, emphasis, language, and what was\n"
-                "included or omitted by different sources.\n"
+                f"{analysis_focus}"
                 'Respond with a JSON object containing an "analysis" key.'
             )
 
-            # Check if analysis prompt fits the budget (it's bigger than
-            # the article prompt since it includes the generated article too)
+            # Check if analysis prompt fits the budget
             analysis_tokens = self.llm.estimate_tokens(
-                ANALYSIS_SYSTEM_PROMPT + analysis_prompt
+                analysis_sys + analysis_prompt
             )
             if analysis_tokens > self.token_budget:
                 logger.warning(
@@ -481,8 +587,6 @@ class StorySummarizer:
                     estimated_tokens=analysis_tokens,
                     budget=self.token_budget,
                 )
-                # Truncate the source articles in the analysis prompt —
-                # the model already has the synthesized article as primary context
                 truncated_text = articles_text[: int(self.token_budget * 2.5)]
                 analysis_prompt = (
                     "Here is a neutral article we produced from multiple sources:\n\n"
@@ -491,14 +595,13 @@ class StorySummarizer:
                     "---\n\n"
                     "And here are the original source reports it was based on:\n\n"
                     f"{truncated_text}\n\n"
-                    "Write a coverage analysis that examines how different outlets covered this story.\n"
-                    "Focus on meaningful differences in framing, emphasis, language, and what was\n"
-                    "included or omitted by different sources.\n"
+                    f"{analysis_focus}"
                     'Respond with a JSON object containing an "analysis" key.'
                 )
 
             analysis_response = self.llm.generate(
-                analysis_prompt, system_prompt=ANALYSIS_SYSTEM_PROMPT,
+                analysis_prompt, system_prompt=analysis_sys,
+                max_tokens=6144,
             )
             parsed_analysis = _parse_llm_json(analysis_response)
             analysis = parsed_analysis["analysis"].strip()
@@ -510,9 +613,12 @@ class StorySummarizer:
 
             sources_used = list(set(a.get("source_slug", "") for a in story.articles))
             article_refs = self._build_article_refs(story.articles)
-            hero_image_url, hero_image_source = self._pick_hero_image(story.articles)
+            hero_image_url, hero_image_source = self._pick_hero_image(story.articles, is_sports)
             article_urls = sorted(str(a.get("url", "")) for a in story.articles if a.get("url"))
             timing = compute_story_timing(story.articles)
+
+            # Use region spread for sports, bias spread otherwise
+            coverage = story.coverage_spread
 
             result = SynthesizedStory(
                 story_id=story.id,
@@ -521,7 +627,7 @@ class StorySummarizer:
                 article=article,
                 analysis=analysis,
                 sources_used=sources_used,
-                bias_coverage=story.bias_spread,
+                bias_coverage=coverage,
                 article_count=len(story.articles),
                 articles=article_refs,
                 hero_image_url=hero_image_url,

@@ -137,6 +137,7 @@ class RSSFetcher:
             source_name=source.name,
             source_slug=source.slug,
             source_bias=source.bias,
+            source_region=source.region,
             column=source.column,
             headline=headline[:500],
             summary=summary[:2000] if summary else None,

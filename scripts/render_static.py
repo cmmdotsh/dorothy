@@ -16,6 +16,7 @@ import re
 import shutil
 from pathlib import Path
 from datetime import datetime, timezone
+from xml.etree.ElementTree import parse as parse_xml
 
 import structlog
 from jinja2 import Environment, FileSystemLoader
@@ -49,6 +50,92 @@ BIAS_COLORS = {
     "right": "#ef4444",
 }
 
+REGION_COLORS = {
+    "us": "#3b82f6",
+    "canada": "#ef4444",
+    "mexico": "#22c55e",
+    "uk": "#6366f1",
+    "australia": "#eab308",
+    "india": "#f97316",
+    "japan": "#ec4899",
+    "korea": "#14b8a6",
+    "international": "#8b5cf6",
+}
+
+REGION_LABELS = {
+    "us": "US",
+    "canada": "Canada",
+    "mexico": "Mexico",
+    "uk": "UK",
+    "australia": "Australia",
+    "india": "India",
+    "japan": "Japan",
+    "korea": "Korea",
+    "international": "Intl",
+}
+
+
+def _dedup_stories(stories: list[dict], threshold: float = 0.3) -> list[dict]:
+    """Remove duplicates based on article URL overlap (Jaccard > threshold).
+
+    Keeps the story with more articles (input order breaks ties, so stories
+    pre-sorted by hotness are preferred).
+    """
+    kept: list[dict] = []
+    kept_url_sets: list[set[str]] = []
+
+    for story in stories:
+        urls = set(story.get("article_urls", []))
+        if not urls:
+            kept.append(story)
+            kept_url_sets.append(set())
+            continue
+
+        is_dup = False
+        for prev_urls in kept_url_sets:
+            if not prev_urls:
+                continue
+            intersection = len(urls & prev_urls)
+            union = len(urls | prev_urls)
+            if union > 0 and intersection / union > threshold:
+                is_dup = True
+                break
+
+        if not is_dup:
+            kept.append(story)
+            kept_url_sets.append(urls)
+
+    return kept
+
+
+def get_podcast_episodes(output_dir: Path) -> list[dict]:
+    """Parse podcast/feed.xml and return episode metadata sorted newest first."""
+    feed_path = output_dir / "podcast" / "feed.xml"
+    if not feed_path.exists():
+        return []
+
+    ns = {"itunes": "http://www.itunes.com/dtds/podcast-1.0.dtd"}
+    tree = parse_xml(str(feed_path))
+    episodes = []
+
+    for item in tree.findall(".//item"):
+        title = item.findtext("title", "")
+        pub_date = item.findtext("pubDate", "")
+        duration = item.findtext("itunes:duration", "", ns)
+        enclosure = item.find("enclosure")
+        url = enclosure.get("url", "") if enclosure is not None else ""
+        filename = url.rsplit("/", 1)[-1] if url else ""
+
+        episodes.append({
+            "title": title,
+            "url": url,
+            "pub_date": pub_date,
+            "duration": duration,
+            "filename": filename,
+        })
+
+    return episodes
+
 
 class StaticSiteGenerator:
     """Generates static HTML from OpenSearch data."""
@@ -80,9 +167,15 @@ class StaticSiteGenerator:
         )
 
     def clean(self) -> None:
-        """Remove contents of the output directory (safe for volume mounts)."""
+        """Remove contents of the output directory (safe for volume mounts).
+
+        Preserves the podcast/ subdirectory which is managed independently,
+        and any hidden directories (e.g. .tmp used by podcast TTS).
+        """
         if self.output_dir.exists():
             for child in self.output_dir.iterdir():
+                if child.name == "podcast" or child.name.startswith("."):
+                    continue
                 if child.is_dir():
                     shutil.rmtree(child)
                 else:
@@ -165,15 +258,17 @@ class StaticSiteGenerator:
         return story
 
     def get_stories_for_column(self, column: str, limit: int = 20) -> list[dict]:
-        """Get synthesized stories for a column."""
-        stories = self.os_client.get_syntheses(column=column, limit=limit)
+        """Get synthesized stories for a column (deduped)."""
+        stories = self.os_client.get_syntheses(column=column, limit=limit * 2)
+        stories = _dedup_stories(stories)[:limit]
         return [self._backfill_image_credit(s) for s in stories]
 
     def get_all_stories(self) -> list[dict]:
         """Get all synthesized stories across all columns."""
         all_stories = []
         for column in COLUMNS:
-            stories = self.os_client.get_syntheses(column=column, limit=100)
+            stories = self.os_client.get_syntheses(column=column, limit=200)
+            stories = _dedup_stories(stories)[:100]
             all_stories.extend(stories)
         return all_stories
 
@@ -189,6 +284,8 @@ class StaticSiteGenerator:
         context.update({
             "columns": COLUMNS,
             "bias_colors": BIAS_COLORS,
+            "region_colors": REGION_COLORS,
+            "region_labels": REGION_LABELS,
             "generated_at": now.isoformat(),
             "dateline": now.strftime("%A, %B %-d, %Y"),
             "edition": context.get("edition") or self.get_edition() or 1,
@@ -200,7 +297,7 @@ class StaticSiteGenerator:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content)
 
-    def render_front_page(self) -> None:
+    def render_front_page(self, episodes: list[dict] | None = None) -> None:
         """Render the front page."""
         stories_by_column = {}
         for column in COLUMNS:
@@ -208,10 +305,23 @@ class StaticSiteGenerator:
 
         html = self.render_template("front_page.html", {
             "stories_by_column": stories_by_column,
+            "latest_episode": episodes[0] if episodes else None,
         })
 
         self.write_page(self.output_dir / "index.html", html)
         console.print("[green]  Rendered index.html[/green]")
+
+    def render_podcast_page(self, episodes: list[dict]) -> None:
+        """Render the podcast archive page."""
+        if not episodes:
+            return
+        html = self.render_template("podcast.html", {
+            "episodes": episodes,
+            "latest_episode": episodes[0],
+            "page": "podcast",
+        })
+        self.write_page(self.output_dir / "podcast.html", html)
+        console.print(f"[green]  Rendered podcast.html ({len(episodes)} episodes)[/green]")
 
     def render_column_pages(self) -> None:
         """Render all column pages."""
@@ -237,7 +347,8 @@ class StaticSiteGenerator:
         # Group stories by column for navigation
         stories_by_column = {}
         for column in COLUMNS:
-            stories = self.os_client.get_syntheses(column=column, limit=100)
+            stories = self.os_client.get_syntheses(column=column, limit=200)
+            stories = _dedup_stories(stories)[:100]
             stories_by_column[column] = [self._backfill_image_credit(s) for s in stories]
 
         rendered = 0
@@ -273,9 +384,11 @@ class StaticSiteGenerator:
 
         self.setup_output()
         self.copy_static_assets()
-        self.render_front_page()
+        episodes = get_podcast_episodes(self.output_dir)
+        self.render_front_page(episodes)
         self.render_column_pages()
         self.render_about_page()
+        self.render_podcast_page(episodes)
         story_count = self.render_story_pages()
 
         duration = (datetime.now(timezone.utc) - start).total_seconds()

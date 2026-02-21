@@ -61,6 +61,22 @@
 
     {% if story.bias_coverage %}
     <section class="bias-section">
+        {% if story.column == 'sports' %}
+        <h3>Coverage by Region</h3>
+        <div class="bias-chart">
+            {% for region in ['us', 'canada', 'mexico', 'uk', 'australia', 'india', 'japan', 'korea', 'international'] %}
+                {% if region in story.bias_coverage %}
+                <div class="bias-bar">
+                    <span class="bias-label" style="color: {{ region_colors.get(region, '#888') }}">{{ region_labels.get(region, region|title) }}</span>
+                    <div class="bar-container">
+                        <div class="bar-fill" style="width: {{ (story.bias_coverage[region] / story.article_count * 100)|round }}%; background: {{ region_colors.get(region, '#888') }}"></div>
+                    </div>
+                    <span class="bias-count">{{ story.bias_coverage[region] }}</span>
+                </div>
+                {% endif %}
+            {% endfor %}
+        </div>
+        {% else %}
         <h3>Coverage by Perspective</h3>
         <div class="bias-chart">
             {% for bias in ['left', 'lean-left', 'center', 'lean-right', 'right'] %}
@@ -75,6 +91,7 @@
                 {% endif %}
             {% endfor %}
         </div>
+        {% endif %}
     </section>
     {% endif %}
 
@@ -95,7 +112,11 @@
         <div class="articles-list">
             {% for article in story.articles %}
             <div class="article-item">
+                {% if story.column == 'sports' and article.source_region %}
+                <span class="bias-pill small region-pill" style="background: {{ region_colors.get(article.source_region, '#888') }}">{{ region_labels.get(article.source_region, article.source_region|title) }}</span>
+                {% else %}
                 <span class="bias-pill small" style="background: {{ bias_colors.get(article.source_bias, '#888') }}">{{ article.source_bias|title|replace('-', ' ') }}</span>
+                {% endif %}
                 <a href="{{ article.url }}" target="_blank" rel="noopener" class="article-link">
                     {{ article.headline }}
                 </a>

@@ -19,6 +19,9 @@ import sys
 import time
 from pathlib import Path
 
+from dotenv import load_dotenv
+load_dotenv()
+
 import schedule
 import structlog
 from rich.console import Console
@@ -28,6 +31,7 @@ from src.config import config
 from src.storage import OpenSearchClient
 from src.synthesis.llm_client import LLMClient
 from src.podcast.generator import PodcastGenerator
+from scripts.render_static import StaticSiteGenerator, get_podcast_episodes
 
 structlog.configure(
     processors=[
@@ -81,12 +85,56 @@ def create_generator(
         output_dir=Path(args.output),
         tts_device=args.device,
         tts_workers=args.workers,
-        voice_ref=config.podcast.voice_ref,
+        voice_ref_a=config.podcast.voice_ref_a,
+        voice_ref_b=config.podcast.voice_ref_b,
         story_count=args.stories,
         bitrate=config.podcast.bitrate,
+        atempo=config.podcast.atempo,
         hf_fallback=config.podcast.hf_fallback,
         hf_token=config.podcast.hf_token,
     )
+
+
+def render_and_deploy() -> None:
+    """Re-render static site and deploy to S3 (picks up new podcast files)."""
+    import os
+
+    output_dir = Path("output")
+
+    console.print("\n[dim]Rendering static site...[/dim]")
+    try:
+        generator = StaticSiteGenerator(output_dir)
+        generator.clean()
+        generator.generate()
+        console.print("[green]  Static site rendered[/green]")
+    except Exception as e:
+        logger.error("render_failed", error=str(e))
+        console.print(f"[red]  Render failed: {e}[/red]")
+        return
+
+    bucket = os.environ.get("S3_BUCKET")
+    if not bucket:
+        console.print("[dim]  S3_BUCKET not set, skipping deploy[/dim]")
+        return
+
+    console.print("[dim]Deploying to S3...[/dim]")
+    try:
+        from scripts.deploy_s3 import S3Deployer
+        cloudfront_id = os.environ.get("CLOUDFRONT_ID") or None
+        deployer = S3Deployer(
+            bucket=bucket,
+            source_dir=output_dir,
+            region=os.environ.get("AWS_REGION", "us-east-1"),
+            cloudfront_id=cloudfront_id,
+        )
+        result = deployer.sync()
+        console.print(f"[green]  Uploaded {result['uploaded']} files[/green]")
+        if cloudfront_id:
+            deployer.invalidate_cloudfront()
+            console.print("[green]  CloudFront cache invalidated[/green]")
+    except Exception as e:
+        logger.error("deploy_failed", error=str(e))
+        console.print(f"[red]  Deploy failed: {e}[/red]")
 
 
 def run_once(args: argparse.Namespace) -> None:
@@ -115,6 +163,8 @@ def run_once(args: argparse.Namespace) -> None:
             console.print(Panel.fit(
                 f"[bold green]Podcast Generated[/bold green]\n{mp3_path}"
             ))
+            if args.publish:
+                render_and_deploy()
         else:
             console.print("[red]Podcast generation failed[/red]")
             sys.exit(1)
@@ -144,6 +194,8 @@ def daemon_mode(args: argparse.Namespace) -> None:
             mp3_path = generator.generate()
             if mp3_path:
                 console.print(f"[green]Podcast generated: {mp3_path}[/green]")
+                if args.publish:
+                    render_and_deploy()
             else:
                 console.print("[yellow]Podcast generation skipped or failed[/yellow]")
         except Exception as e:
@@ -211,6 +263,11 @@ def main() -> None:
         type=int,
         default=60,
         help="Daemon interval in minutes (default: 60)",
+    )
+    parser.add_argument(
+        "--publish",
+        action="store_true",
+        help="Re-render static site and deploy to S3 after each episode",
     )
 
     args = parser.parse_args()

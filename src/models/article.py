@@ -23,6 +23,20 @@ class BiasRating(str, Enum):
     RIGHT = "right"
 
 
+class Region(str, Enum):
+    """Geographic region for sports sources."""
+
+    US = "us"
+    CANADA = "canada"
+    MEXICO = "mexico"
+    UK = "uk"
+    AUSTRALIA = "australia"
+    INDIA = "india"
+    JAPAN = "japan"
+    KOREA = "korea"
+    INTERNATIONAL = "international"
+
+
 class Column(str, Enum):
     """News column/category classification."""
 
@@ -73,6 +87,11 @@ class Article(BaseModel):
         None, description="Semantic embedding vector for clustering"
     )
 
+    # Region (sports only)
+    source_region: Optional[str] = Field(
+        None, description="Geographic region of source (sports column only)"
+    )
+
     # Image from RSS feed
     image_url: Optional[str] = Field(
         None, description="Article thumbnail/hero image URL"
@@ -98,6 +117,7 @@ class Article(BaseModel):
             "url": str(self.url),
             "pub_date": self.pub_date.isoformat(),
             "fetched_at": self.fetched_at.isoformat(),
+            "source_region": self.source_region,
             "embedding": self.embedding,
             "image_url": self.image_url,
         }
@@ -112,4 +132,5 @@ class Source(BaseModel):
     fetch_method: FetchMethod
     column: Column
     bias: BiasRating
+    region: Optional[str] = None
     active: bool = True

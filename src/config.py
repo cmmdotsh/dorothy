@@ -71,11 +71,13 @@ class PodcastSettings(BaseSettings):
     """Podcast generation settings."""
 
     enabled: bool = False
-    voice_ref: str = "config/voices/default.wav"
+    voice_ref_a: str = "config/voices/anchor_a.wav"
+    voice_ref_b: str = "config/voices/anchor_b.wav"
     tts_device: str = "cpu"
     tts_workers: int = 1
     story_count: int = 5
     target_wpm: int = 150
+    atempo: float = 1.1
     output_format: str = "mp3"
     bitrate: str = "128k"
     hf_fallback: bool = False
@@ -118,6 +120,7 @@ class DorothyConfig:
                     fetch_method=FetchMethod(src["fetch_method"]),
                     column=Column(src["column"]),
                     bias=BiasRating(src["bias"]),
+                    region=src.get("region"),
                     active=src.get("active", True),
                 )
             )
