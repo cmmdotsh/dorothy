@@ -330,15 +330,130 @@ sources:
     bias: center
     active: true
 
+  - name: "BBC Business"
+    slug: "bbc-biz"
+    rss_url: "https://feeds.bbci.co.uk/news/business/rss.xml"
+    fetch_method: rss
+    column: money
+    bias: center
+    active: true
+
+  - name: "CNN Business"
+    slug: "cnn-biz"
+    rss_url: "http://rss.cnn.com/rss/money_topstories.rss"
+    fetch_method: rss
+    column: money
+    bias: lean-left
+    active: true
+
+  - name: "Fortune"
+    slug: "fortune"
+    rss_url: "https://fortune.com/feed/"
+    fetch_method: rss
+    column: money
+    bias: lean-left
+    active: true
+
+  - name: "NPR Economy"
+    slug: "npr-economy"
+    rss_url: "https://feeds.npr.org/1017/rss.xml"
+    fetch_method: rss
+    column: money
+    bias: lean-left
+    active: true
+
+  - name: "Politico Economy"
+    slug: "politico-economy"
+    rss_url: "https://rss.politico.com/economy.xml"
+    fetch_method: rss
+    column: money
+    bias: lean-left
+    active: true
+
+  - name: "Jacobin"
+    slug: "jacobin"
+    rss_url: "https://jacobin.com/feed/"
+    fetch_method: rss
+    column: money
+    bias: left
+    active: true
+
+  - name: "Common Dreams"
+    slug: "commondreams"
+    rss_url: "https://www.commondreams.org/feeds/news.rss"
+    fetch_method: rss
+    column: money
+    bias: left
+    active: true
+
+  - name: "Epoch Times Business"
+    slug: "epochtimes-biz"
+    rss_url: "https://feed.theepochtimes.com/business/economies/feed"
+    fetch_method: rss
+    column: money
+    bias: lean-right
+    active: true
+
+  - name: "Newsmax Finance"
+    slug: "newsmax-finance"
+    rss_url: "https://www.newsmax.com/rss/FinanceNews/4"
+    fetch_method: rss
+    column: money
+    bias: right
+    active: false  # Cloudflare blocking - may need alternative
+
+  - name: "National Review Economy"
+    slug: "nationalreview-econ"
+    rss_url: "https://www.nationalreview.com/economy-business/feed/"
+    fetch_method: rss
+    column: money
+    bias: right
+    active: true
+
+  - name: "Washington Times Business"
+    slug: "washtimes-biz"
+    rss_url: "https://www.washingtontimes.com/rss/headlines/news/business-economy/"
+    fetch_method: rss
+    column: money
+    bias: lean-right
+    active: true
+
+  - name: "RealClearMarkets"
+    slug: "rcmarkets"
+    rss_url: "https://www.realclearmarkets.com/index.xml"
+    fetch_method: rss
+    column: money
+    bias: lean-right
+    active: true
+
+  - name: "ZeroHedge"
+    slug: "zerohedge"
+    rss_url: "https://cms.zerohedge.com/fullrss2.xml"
+    fetch_method: rss
+    column: money
+    bias: lean-right
+    active: true
+
+  - name: "New York Post Business"
+    slug: "nypost-biz"
+    rss_url: "https://nypost.com/business/feed/"
+    fetch_method: rss
+    column: money
+    bias: lean-right
+    active: true
+
   # ============================================================================
-  # SPORTS
+  # SPORTS — Regional tagging (bias is vestigial, region is the key dimension)
   # ============================================================================
+
+  # US
   - name: "ESPN"
     slug: "espn"
     rss_url: "https://www.espn.com/espn/rss/news"
     fetch_method: rss
     column: sports
     bias: center
+    region: us
     active: true
 
   - name: "CBS Sports"
@@ -347,15 +462,196 @@ sources:
     fetch_method: rss
     column: sports
     bias: center
+    region: us
     active: true
 
-  - name: "The Athletic"
-    slug: "athletic"
-    rss_url: "https://theathletic.com?rss"
+  - name: "Fox Sports"
+    slug: "foxsports"
+    rss_url: "https://news.google.com/rss/search?q=when:24h+site:foxsports.com&ceid=US:en&hl=en-US&gl=US"
     fetch_method: rss
     column: sports
     bias: center
-    active: false  # Malformed XML in feed
+    region: us
+    active: true
+
+  - name: "Yahoo Sports"
+    slug: "yahoosports"
+    rss_url: "https://news.google.com/rss/search?q=when:24h+site:sports.yahoo.com&ceid=US:en&hl=en-US&gl=US"
+    fetch_method: rss
+    column: sports
+    bias: center
+    region: us
+    active: true
+
+  - name: "Bleacher Report"
+    slug: "bleacherreport"
+    rss_url: "https://news.google.com/rss/search?q=when:24h+site:bleacherreport.com&ceid=US:en&hl=en-US&gl=US"
+    fetch_method: rss
+    column: sports
+    bias: center
+    region: us
+    active: true
+
+  - name: "SB Nation"
+    slug: "sbnation"
+    rss_url: "https://www.sbnation.com/rss/index.xml"
+    fetch_method: rss
+    column: sports
+    bias: center
+    region: us
+    active: true
+
+  - name: "AP Sports"
+    slug: "ap-sports"
+    rss_url: "https://news.google.com/rss/search?q=when:24h+site:apnews.com+sports&ceid=US:en&hl=en-US&gl=US"
+    fetch_method: rss
+    column: sports
+    bias: center
+    region: us
+    active: true
+
+  # Canada
+  - name: "TSN"
+    slug: "tsn"
+    rss_url: "https://www.tsn.ca/datafiles/rss/Stories.xml"
+    fetch_method: rss
+    column: sports
+    bias: center
+    region: canada
+    active: true
+
+  - name: "Sportsnet"
+    slug: "sportsnet"
+    rss_url: "https://www.sportsnet.ca/feed/"
+    fetch_method: rss
+    column: sports
+    bias: center
+    region: canada
+    active: true
+
+  - name: "CBC Sports"
+    slug: "cbc-sports"
+    rss_url: "https://www.cbc.ca/cmlink/rss-sports"
+    fetch_method: rss
+    column: sports
+    bias: center
+    region: canada
+    active: true
+
+  # UK
+  - name: "BBC Sport"
+    slug: "bbc-sport"
+    rss_url: "https://feeds.bbci.co.uk/sport/rss.xml"
+    fetch_method: rss
+    column: sports
+    bias: center
+    region: uk
+    active: true
+
+  - name: "Sky Sports"
+    slug: "skysports"
+    rss_url: "https://www.skysports.com/rss/12040"
+    fetch_method: rss
+    column: sports
+    bias: center
+    region: uk
+    active: true
+
+  - name: "The Guardian Sport"
+    slug: "guardian-sport"
+    rss_url: "https://www.theguardian.com/uk/sport/rss"
+    fetch_method: rss
+    column: sports
+    bias: center
+    region: uk
+    active: true
+
+  # Mexico
+  - name: "Mediotiempo"
+    slug: "mediotiempo"
+    rss_url: "https://www.mediotiempo.com/rss/noticia.xml"
+    fetch_method: rss
+    column: sports
+    bias: center
+    region: mexico
+    active: true
+
+  - name: "ESPN Deportes"
+    slug: "espn-deportes"
+    rss_url: "https://news.google.com/rss/search?q=when:24h+site:espndeportes.espn.com&ceid=US:en&hl=en-US&gl=US"
+    fetch_method: rss
+    column: sports
+    bias: center
+    region: mexico
+    active: true
+
+  # Australia
+  - name: "SMH Sport"
+    slug: "smh-sport"
+    rss_url: "https://www.smh.com.au/rss/sport.xml"
+    fetch_method: rss
+    column: sports
+    bias: center
+    region: australia
+    active: true
+
+  - name: "Fox Sports AU"
+    slug: "foxsports-au"
+    rss_url: "https://www.foxsports.com.au/content-feeds/latest-news/"
+    fetch_method: rss
+    column: sports
+    bias: center
+    region: australia
+    active: true
+
+  # India
+  - name: "ESPNcricinfo"
+    slug: "espncricinfo"
+    rss_url: "https://www.espncricinfo.com/rss/content/story/feeds/0.xml"
+    fetch_method: rss
+    column: sports
+    bias: center
+    region: india
+    active: true
+
+  - name: "NDTV Sports"
+    slug: "ndtv-sports"
+    rss_url: "https://feeds.feedburner.com/ndtvsports-latest"
+    fetch_method: rss
+    column: sports
+    bias: center
+    region: india
+    active: true
+
+  # Japan
+  - name: "Japan Times Sports"
+    slug: "japantimes-sports"
+    rss_url: "https://www.japantimes.co.jp/feed/sports/"
+    fetch_method: rss
+    column: sports
+    bias: center
+    region: japan
+    active: true
+
+  # Korea
+  - name: "Yonhap Sports"
+    slug: "yonhap-sports"
+    rss_url: "https://en.yna.co.kr/RSS/sports.xml"
+    fetch_method: rss
+    column: sports
+    bias: center
+    region: korea
+    active: true
+
+  # International
+  - name: "Reuters Sports"
+    slug: "reuters-sports"
+    rss_url: "https://news.google.com/rss/search?q=when:24h+site:reuters.com+sports&ceid=US:en&hl=en-US&gl=US"
+    fetch_method: rss
+    column: sports
+    bias: center
+    region: international
+    active: true
 
   # ============================================================================
   # LIFESTYLE
