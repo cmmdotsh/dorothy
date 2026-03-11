@@ -1,5 +1,51 @@
 // Dorothy PWA app logic
 
+// Theme toggle
+(function() {
+  var root = document.documentElement;
+  var toggle = document.getElementById('theme-toggle');
+  var metaTheme = document.querySelector('meta[name="theme-color"]');
+
+  function getTheme() {
+    return root.dataset.theme || 'light';
+  }
+
+  function updateToggle() {
+    if (!toggle) return;
+    toggle.textContent = getTheme() === 'dark' ? '\u2600' : '\u263E';
+  }
+
+  function updateMeta() {
+    if (!metaTheme) return;
+    metaTheme.content = getTheme() === 'dark' ? '#1a1a1a' : '#f8f6f1';
+  }
+
+  function setTheme(theme) {
+    root.dataset.theme = theme;
+    updateToggle();
+    updateMeta();
+  }
+
+  updateToggle();
+  updateMeta();
+
+  if (toggle) {
+    toggle.addEventListener('click', function() {
+      var next = getTheme() === 'dark' ? 'light' : 'dark';
+      localStorage.setItem('theme', next);
+      setTheme(next);
+    });
+  }
+
+  // Follow OS preference if user hasn't manually chosen
+  if (window.matchMedia) {
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function(e) {
+      if (localStorage.getItem('theme')) return;
+      setTheme(e.matches ? 'dark' : 'light');
+    });
+  }
+})();
+
 // Register service worker
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
@@ -31,11 +77,16 @@ if (document.querySelector('.story-detail')) {
     }
   };
 
+  let swipeTarget = null;
+
   document.addEventListener('touchstart', e => {
+    swipeTarget = e.target;
     touchStartX = e.changedTouches[0].screenX;
   }, { passive: true });
 
   document.addEventListener('touchend', e => {
+    // Don't trigger swipe navigation from inside the similarity graph/matrix
+    if (swipeTarget && swipeTarget.closest('#similarity-web')) return;
     touchEndX = e.changedTouches[0].screenX;
     handleSwipe();
   }, { passive: true });
@@ -97,6 +148,72 @@ function updateTimeago() {
   });
 }
 updateTimeago();
+
+// Podcast audio player
+function initPlayer(playBtn, audio, progressWrap, progressBar, timeEl) {
+  if (!playBtn || !audio) return;
+
+  let loaded = false;
+
+  function fmtTime(s) {
+    const m = Math.floor(s / 60);
+    const sec = Math.floor(s % 60);
+    return m + ':' + (sec < 10 ? '0' : '') + sec;
+  }
+
+  playBtn.addEventListener('click', () => {
+    if (!loaded) {
+      audio.load();
+      loaded = true;
+    }
+    if (audio.paused) {
+      audio.play();
+      playBtn.innerHTML = '\u275A\u275A';
+    } else {
+      audio.pause();
+      playBtn.innerHTML = '\u25B6';
+    }
+  });
+
+  audio.addEventListener('timeupdate', () => {
+    if (!audio.duration) return;
+    const pct = (audio.currentTime / audio.duration) * 100;
+    progressBar.style.width = pct + '%';
+    timeEl.textContent = fmtTime(audio.currentTime) + ' / ' + fmtTime(audio.duration);
+  });
+
+  audio.addEventListener('ended', () => {
+    playBtn.innerHTML = '\u25B6';
+    progressBar.style.width = '0%';
+  });
+
+  if (progressWrap) {
+    progressWrap.addEventListener('click', (e) => {
+      if (!audio.duration) return;
+      const rect = progressWrap.getBoundingClientRect();
+      const pct = (e.clientX - rect.left) / rect.width;
+      audio.currentTime = pct * audio.duration;
+    });
+  }
+}
+
+// Front page player strip
+initPlayer(
+  document.getElementById('ps-play'),
+  document.getElementById('ps-audio'),
+  document.getElementById('ps-progress-wrap'),
+  document.getElementById('ps-progress-bar'),
+  document.getElementById('ps-time')
+);
+
+// Podcast archive page player
+initPlayer(
+  document.getElementById('fp-play'),
+  document.getElementById('fp-audio'),
+  document.getElementById('fp-progress-wrap'),
+  document.getElementById('fp-progress-bar'),
+  document.getElementById('fp-time')
+);
 
 // Column page sort controls
 const sortControls = document.querySelector('.sort-controls');

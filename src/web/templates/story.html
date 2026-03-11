@@ -35,97 +35,157 @@
     </figure>
     {% endif %}
 
-    {% if story.article %}
-    <section class="story-content">
-        <div class="article-text">
-            {{ story.article|markdown }}
-        </div>
-    </section>
-    {% elif story.summary %}
-    {# Backward compat for old single-pass syntheses #}
-    <section class="story-content">
-        <div class="article-text">
-            {{ story.summary|markdown }}
-        </div>
-    </section>
-    {% endif %}
+    <div class="story-tabs">
+        <input type="radio" name="story-tab" id="tab-article" class="tab-radio" checked>
+        <input type="radio" name="story-tab" id="tab-analysis" class="tab-radio">
+        <input type="radio" name="story-tab" id="tab-sources" class="tab-radio">
 
-    {% if story.analysis %}
-    <section class="story-content coverage-analysis">
-        <h3>Coverage Analysis</h3>
-        <div class="analysis-text">
-            {{ story.analysis|markdown }}
-        </div>
-    </section>
-    {% endif %}
+        <nav class="tab-bar">
+            <label for="tab-article" class="tab-label">Article</label>
+            <label for="tab-analysis" class="tab-label">Analysis</label>
+            <label for="tab-sources" class="tab-label">Sources</label>
+        </nav>
 
-    {% if story.bias_coverage %}
-    <section class="bias-section">
-        {% if story.column == 'sports' %}
-        <h3>Coverage by Region</h3>
-        <div class="bias-chart">
-            {% for region in ['us', 'canada', 'mexico', 'uk', 'australia', 'india', 'japan', 'korea', 'international'] %}
-                {% if region in story.bias_coverage %}
-                <div class="bias-bar">
-                    <span class="bias-label" style="color: {{ region_colors.get(region, '#888') }}">{{ region_labels.get(region, region|title) }}</span>
-                    <div class="bar-container">
-                        <div class="bar-fill" style="width: {{ (story.bias_coverage[region] / story.article_count * 100)|round }}%; background: {{ region_colors.get(region, '#888') }}"></div>
-                    </div>
-                    <span class="bias-count">{{ story.bias_coverage[region] }}</span>
+        <div class="tab-panel" id="panel-article">
+            {% if story.article %}
+            <section class="story-content">
+                <div class="article-text">
+                    {{ story.article|markdown }}
                 </div>
-                {% endif %}
-            {% endfor %}
-        </div>
-        {% else %}
-        <h3>Coverage by Perspective</h3>
-        <div class="bias-chart">
-            {% for bias in ['left', 'lean-left', 'center', 'lean-right', 'right'] %}
-                {% if bias in story.bias_coverage %}
-                <div class="bias-bar">
-                    <span class="bias-label" style="color: {{ bias_colors[bias] }}">{{ bias|title }}</span>
-                    <div class="bar-container">
-                        <div class="bar-fill" style="width: {{ (story.bias_coverage[bias] / story.article_count * 100)|round }}%; background: {{ bias_colors[bias] }}"></div>
-                    </div>
-                    <span class="bias-count">{{ story.bias_coverage[bias] }}</span>
+            </section>
+            {% elif story.summary %}
+            <section class="story-content">
+                <div class="article-text">
+                    {{ story.summary|markdown }}
                 </div>
-                {% endif %}
-            {% endfor %}
+            </section>
+            {% endif %}
         </div>
-        {% endif %}
-    </section>
-    {% endif %}
 
-    {% if story.sources_used %}
-    <section class="sources-section">
-        <h3>Sources ({{ story.sources_used|length }})</h3>
-        <ul class="source-list-detailed">
-            {% for source in story.sources_used %}
-            <li class="source-item">{{ source }}</li>
-            {% endfor %}
-        </ul>
-    </section>
-    {% endif %}
+        <div class="tab-panel" id="panel-analysis">
+            {% if story.analysis %}
+            <section class="story-content coverage-analysis">
+                <h3>Coverage Analysis</h3>
+                <div class="analysis-text">
+                    {{ story.analysis|markdown }}
+                </div>
+            </section>
+            {% endif %}
 
-    {% if story.articles %}
-    <section class="articles-section">
-        <h3>Original Articles ({{ story.articles|length }})</h3>
-        <div class="articles-list">
-            {% for article in story.articles %}
-            <div class="article-item">
-                {% if story.column == 'sports' and article.source_region %}
-                <span class="bias-pill small region-pill" style="background: {{ region_colors.get(article.source_region, '#888') }}">{{ region_labels.get(article.source_region, article.source_region|title) }}</span>
+            {% if story.bias_coverage %}
+            <section class="bias-section">
+                {% if story.column == 'sports' %}
+                <h3>Coverage by Region</h3>
+                <div class="bias-chart">
+                    {% for region in ['us', 'canada', 'mexico', 'uk', 'australia', 'india', 'japan', 'korea', 'international'] %}
+                        {% if region in story.bias_coverage %}
+                        <div class="bias-bar">
+                            <span class="bias-label" style="color: {{ region_colors.get(region, '#888') }}">{{ region_labels.get(region, region|title) }}</span>
+                            <div class="bar-container">
+                                <div class="bar-fill" style="width: {{ (story.bias_coverage[region] / story.article_count * 100)|round }}%; background: {{ region_colors.get(region, '#888') }}"></div>
+                            </div>
+                            <span class="bias-count">{{ story.bias_coverage[region] }}</span>
+                        </div>
+                        {% endif %}
+                    {% endfor %}
+                </div>
+                {% elif story.column == 'tech' %}
+                <h3>Coverage by Perspective</h3>
+                <div class="bias-chart">
+                    {% for perspective in ['consumer', 'enterprise', 'academic', 'culture'] %}
+                        {% if perspective in story.bias_coverage %}
+                        <div class="bias-bar">
+                            <span class="bias-label" style="color: {{ perspective_colors.get(perspective, '#888') }}">{{ perspective_labels.get(perspective, perspective|title) }}</span>
+                            <div class="bar-container">
+                                <div class="bar-fill" style="width: {{ (story.bias_coverage[perspective] / story.article_count * 100)|round }}%; background: {{ perspective_colors.get(perspective, '#888') }}"></div>
+                            </div>
+                            <span class="bias-count">{{ story.bias_coverage[perspective] }}</span>
+                        </div>
+                        {% endif %}
+                    {% endfor %}
+                </div>
                 {% else %}
-                <span class="bias-pill small" style="background: {{ bias_colors.get(article.source_bias, '#888') }}">{{ article.source_bias|title|replace('-', ' ') }}</span>
+                <h3>Coverage by Perspective</h3>
+                <div class="bias-chart">
+                    {% for bias in ['left', 'lean-left', 'center', 'lean-right', 'right'] %}
+                        {% if bias in story.bias_coverage %}
+                        <div class="bias-bar">
+                            <span class="bias-label" style="color: {{ bias_colors[bias] }}">{{ bias|title }}</span>
+                            <div class="bar-container">
+                                <div class="bar-fill" style="width: {{ (story.bias_coverage[bias] / story.article_count * 100)|round }}%; background: {{ bias_colors[bias] }}"></div>
+                            </div>
+                            <span class="bias-count">{{ story.bias_coverage[bias] }}</span>
+                        </div>
+                        {% endif %}
+                    {% endfor %}
+                </div>
                 {% endif %}
-                <a href="{{ article.url }}" target="_blank" rel="noopener" class="article-link">
-                    {{ article.headline }}
-                </a>
-                <span class="article-source">— {{ article.source_name }}</span>
-            </div>
-            {% endfor %}
+            </section>
+            {% endif %}
         </div>
-    </section>
-    {% endif %}
+
+        <div class="tab-panel" id="panel-sources">
+            {% if story.similarity_edges %}
+            <section class="similarity-section">
+                <h3>Source Similarity</h3>
+                <p class="similarity-caption">Connections show how similarly each outlet covered this story. Thicker lines = more similar framing.</p>
+                <div id="similarity-web"></div>
+                <script id="similarity-data" type="application/json">
+                    {
+                        "nodes": [
+                            {% for article in story.articles %}
+                            {
+                                "index": {{ loop.index0 }},
+                                "source_name": {{ article.source_name|tojson }},
+                                "headline": {{ article.headline|tojson }},
+                                "source_bias": {{ (article.source_bias or "")|tojson }},
+                                "source_region": {{ (article.source_region or "")|tojson }},
+                                "source_perspective": {{ (article.source_perspective or "")|tojson }}
+                            }{{ "," if not loop.last }}
+                            {% endfor %}
+                        ],
+                        "edges": {{ story.similarity_edges|tojson }},
+                        "column": {{ (story.column or "")|tojson }}
+                    }
+                </script>
+            </section>
+            {% endif %}
+
+            {% if story.sources_used %}
+            <section class="sources-section">
+                <h3>Sources ({{ story.sources_used|length }})</h3>
+                <ul class="source-list-detailed">
+                    {% for source in story.sources_used %}
+                    <li class="source-item">{{ source }}</li>
+                    {% endfor %}
+                </ul>
+            </section>
+            {% endif %}
+
+            {% if story.articles %}
+            <section class="articles-section">
+                <h3>Original Articles ({{ story.articles|length }})</h3>
+                <div class="articles-list">
+                    {% for article in story.articles %}
+                    <div class="article-item">
+                        {% if story.column == 'sports' and article.source_region %}
+                        <span class="bias-pill small region-pill" style="background: {{ region_colors.get(article.source_region, '#888') }}">{{ region_labels.get(article.source_region, article.source_region|title) }}</span>
+                        {% elif story.column == 'tech' and article.source_perspective %}
+                        <span class="bias-pill small" style="background: {{ perspective_colors.get(article.source_perspective, '#888') }}">{{ perspective_labels.get(article.source_perspective, article.source_perspective|title) }}</span>
+                        {% else %}
+                        <span class="bias-pill small" style="background: {{ bias_colors.get(article.source_bias, '#888') }}">{{ article.source_bias|title|replace('-', ' ') }}</span>
+                        {% endif %}
+                        <a href="{{ article.url }}" target="_blank" rel="noopener" class="article-link">
+                            {{ article.headline }}
+                        </a>
+                        <span class="article-source">— {{ article.source_name }}</span>
+                    </div>
+                    {% endfor %}
+                </div>
+            </section>
+            {% endif %}
+        </div>
+    </div>
 
     <!-- Mobile Story Navigation -->
     {% if prev_story or next_story %}
@@ -167,4 +227,9 @@
         {% endif %}
     </footer>
 </article>
+
+{% if story.similarity_edges %}
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<script src="/static/{{ assets['similarity-web.js'] if assets is defined and 'similarity-web.js' in assets else 'similarity-web.js' }}"></script>
+{% endif %}
 {% endblock %}

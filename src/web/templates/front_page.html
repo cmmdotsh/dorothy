@@ -5,15 +5,20 @@
 {% block content %}
 {% if latest_episode %}
 <div class="podcast-strip" id="podcast-strip">
-    <button class="ps-play-btn" id="ps-play" aria-label="Play podcast">&#9654;</button>
-    <div class="ps-info">
-        <span class="ps-title">{{ latest_episode.title }}</span>
+    <div class="ps-header">
+        <span class="ps-section-label">The Dorothy Wireless</span>
         <a href="/podcast.html" class="ps-archive">Full Archive &rarr;</a>
     </div>
-    <div class="ps-progress-wrap" id="ps-progress-wrap">
-        <div class="ps-progress-bar" id="ps-progress-bar"></div>
+    <div class="ps-controls">
+        <button class="ps-play-btn" id="ps-play" aria-label="Play podcast">&#9654;</button>
+        <div class="ps-track">
+            <span class="ps-title">{{ latest_episode.title }}</span>
+            <div class="ps-progress-wrap" id="ps-progress-wrap">
+                <div class="ps-progress-bar" id="ps-progress-bar"></div>
+            </div>
+        </div>
+        <span class="ps-time" id="ps-time">{{ latest_episode.duration or '0:00' }}</span>
     </div>
-    <span class="ps-time" id="ps-time">{{ latest_episode.duration or '0:00' }}</span>
     <audio id="ps-audio" preload="none" src="/podcast/{{ latest_episode.filename }}"></audio>
 </div>
 {% endif %}
@@ -91,6 +96,12 @@
                                     {% for region in ['us', 'canada', 'mexico', 'uk', 'australia', 'india', 'japan', 'korea', 'international'] %}
                                         {% if region in story.bias_coverage %}
                                         <span class="bias-dot" style="background: {{ region_colors.get(region, '#888') }}" title="{{ region_labels.get(region, region|title) }}: {{ story.bias_coverage[region] }}"></span>
+                                        {% endif %}
+                                    {% endfor %}
+                                {% elif col_name == 'tech' %}
+                                    {% for perspective in ['consumer', 'enterprise', 'academic', 'culture'] %}
+                                        {% if perspective in story.bias_coverage %}
+                                        <span class="bias-dot" style="background: {{ perspective_colors.get(perspective, '#888') }}" title="{{ perspective_labels.get(perspective, perspective|title) }}: {{ story.bias_coverage[perspective] }}"></span>
                                         {% endif %}
                                     {% endfor %}
                                 {% else %}

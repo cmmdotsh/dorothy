@@ -19,6 +19,14 @@
     <link rel="icon" type="image/svg+xml" href="/static/icon-192.svg">
     <link rel="apple-touch-icon" href="/static/icon-192.svg">
 
+    <script>
+      (function(){
+        var t = localStorage.getItem('theme');
+        if (t) document.documentElement.dataset.theme = t;
+        else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches)
+          document.documentElement.dataset.theme = 'dark';
+      })();
+    </script>
     <link rel="stylesheet" href="/static/{{ assets['style.css'] }}">
     <script src="/static/{{ assets['app.js'] }}" defer></script>
 </head>
@@ -40,7 +48,9 @@
                     {{ col|title }}
                 </a>
                 {% endfor %}
+                <a href="/podcast.html" class="nav-link {% if page == 'podcast' %}active{% endif %}">Podcast</a>
                 <a href="/about" class="nav-link {% if page == 'about' %}active{% endif %}">About</a>
+                <button class="theme-toggle" id="theme-toggle" aria-label="Toggle dark mode"></button>
             </nav>
         </div>
     </header>

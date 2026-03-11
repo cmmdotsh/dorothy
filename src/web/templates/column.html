@@ -45,6 +45,12 @@
                         {{ region_labels.get(region, region|title) }}: {{ count }}
                     </span>
                     {% endfor %}
+                {% elif column == 'tech' %}
+                    {% for perspective, count in story.bias_coverage.items() %}
+                    <span class="bias-pill" style="background: {{ perspective_colors.get(perspective, '#888') }}">
+                        {{ perspective_labels.get(perspective, perspective|title) }}: {{ count }}
+                    </span>
+                    {% endfor %}
                 {% else %}
                     {% for bias, count in story.bias_coverage.items() %}
                     <span class="bias-pill" style="background: {{ bias_colors.get(bias, '#888') }}">
