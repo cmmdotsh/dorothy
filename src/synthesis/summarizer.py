@@ -707,6 +707,7 @@ class StorySummarizer:
             )
             article_response = self.llm.generate(
                 article_prompt, system_prompt=article_sys,
+                skip_thinking=True,
             )
             parsed = _parse_llm_json(article_response)
             headline = parsed["headline"].strip()
@@ -756,6 +757,7 @@ class StorySummarizer:
             analysis_response = self.llm.generate(
                 analysis_prompt, system_prompt=analysis_sys,
                 max_tokens=6144,
+                skip_thinking=True,
             )
             parsed_analysis = _parse_llm_json(analysis_response)
             analysis = parsed_analysis["analysis"].strip()

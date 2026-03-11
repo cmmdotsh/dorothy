@@ -31,7 +31,7 @@ class LLMClient:
     def __init__(
         self,
         base_url: str = "http://192.168.0.149:1234",
-        model: str = "qwen/qwen3-next-80b",
+        model: str = "mlx-community/qwen3.5-35b-a3b",
         temperature: float = 0.3,
         max_tokens: int = 4096,
         context_length: int = 32768,
