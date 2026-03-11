@@ -31,7 +31,6 @@ from src.config import config
 from src.storage import OpenSearchClient
 from src.synthesis.llm_client import LLMClient
 from src.podcast.generator import PodcastGenerator
-from scripts.render_static import StaticSiteGenerator, get_podcast_episodes
 
 structlog.configure(
     processors=[
@@ -95,21 +94,17 @@ def create_generator(
     )
 
 
-def render_and_deploy() -> None:
-    """Re-render static site and deploy to S3 (picks up new podcast files)."""
+def deploy_podcast_files(mp3_path: Path | None = None) -> None:
+    """Deploy new podcast episode files to S3.
+
+    Only uploads the files that changed: the new MP3, its manifest,
+    feed.xml, and latest.mp3.  Previous episodes are already on S3.
+    """
     import os
 
-    output_dir = Path("output")
-
-    console.print("\n[dim]Rendering static site...[/dim]")
-    try:
-        generator = StaticSiteGenerator(output_dir)
-        generator.clean()
-        generator.generate()
-        console.print("[green]  Static site rendered[/green]")
-    except Exception as e:
-        logger.error("render_failed", error=str(e))
-        console.print(f"[red]  Render failed: {e}[/red]")
+    podcast_dir = Path("output/podcast")
+    if not podcast_dir.exists():
+        console.print("[dim]  No podcast directory, skipping deploy[/dim]")
         return
 
     bucket = os.environ.get("S3_BUCKET")
@@ -117,23 +112,47 @@ def render_and_deploy() -> None:
         console.print("[dim]  S3_BUCKET not set, skipping deploy[/dim]")
         return
 
-    console.print("[dim]Deploying to S3...[/dim]")
+    console.print("[dim]Deploying podcast files to S3...[/dim]")
     try:
         from scripts.deploy_s3 import S3Deployer
         cloudfront_id = os.environ.get("CLOUDFRONT_ID") or None
         deployer = S3Deployer(
             bucket=bucket,
-            source_dir=output_dir,
+            source_dir=Path("output"),
             region=os.environ.get("AWS_REGION", "us-east-1"),
             cloudfront_id=cloudfront_id,
         )
-        result = deployer.sync()
-        console.print(f"[green]  Uploaded {result['uploaded']} files[/green]")
+
+        # Only upload the files that actually changed
+        files_to_upload: list[Path] = []
+
+        # Always upload feed.xml and latest.mp3
+        feed_xml = podcast_dir / "feed.xml"
+        latest_mp3 = podcast_dir / "latest.mp3"
+        if feed_xml.exists():
+            files_to_upload.append(feed_xml)
+        if latest_mp3.exists():
+            files_to_upload.append(latest_mp3)
+
+        # Upload the new episode MP3 and its manifest
+        if mp3_path and mp3_path.exists():
+            files_to_upload.append(mp3_path)
+            manifest_path = mp3_path.with_suffix(".manifest.json")
+            if manifest_path.exists():
+                files_to_upload.append(manifest_path)
+
+        uploaded = 0
+        for file_path in files_to_upload:
+            if deployer.upload_file(file_path):
+                uploaded += 1
+
+        console.print(f"[green]  Uploaded {uploaded} podcast files[/green]")
+
         if cloudfront_id:
             deployer.invalidate_cloudfront()
             console.print("[green]  CloudFront cache invalidated[/green]")
     except Exception as e:
-        logger.error("deploy_failed", error=str(e))
+        logger.error("podcast_deploy_failed", error=str(e))
         console.print(f"[red]  Deploy failed: {e}[/red]")
 
 
@@ -164,7 +183,7 @@ def run_once(args: argparse.Namespace) -> None:
                 f"[bold green]Podcast Generated[/bold green]\n{mp3_path}"
             ))
             if args.publish:
-                render_and_deploy()
+                deploy_podcast_files(mp3_path)
         else:
             console.print("[red]Podcast generation failed[/red]")
             sys.exit(1)
@@ -195,7 +214,7 @@ def daemon_mode(args: argparse.Namespace) -> None:
             if mp3_path:
                 console.print(f"[green]Podcast generated: {mp3_path}[/green]")
                 if args.publish:
-                    render_and_deploy()
+                    deploy_podcast_files(mp3_path)
             else:
                 console.print("[yellow]Podcast generation skipped or failed[/yellow]")
         except Exception as e:

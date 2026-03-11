@@ -1,5 +1,6 @@
 """Podcast generation orchestrator for Dorothy."""
 
+import json
 import re
 import shutil
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -54,9 +55,11 @@ class PodcastGenerator:
         output_dir: Path = Path("output/podcast"),
         tts_device: str = "cpu",
         tts_workers: int = 1,
-        voice_ref: str = "config/voices/default.wav",
+        voice_ref_a: str = "config/voices/anchor_a.wav",
+        voice_ref_b: str = "config/voices/anchor_b.wav",
         story_count: int = 5,
         bitrate: str = "128k",
+        atempo: float = 1.0,
         hf_fallback: bool = False,
         hf_token: str = "",
     ):
@@ -66,21 +69,43 @@ class PodcastGenerator:
         self.tmp_dir = output_dir / ".tmp"
         self.tts_device = tts_device
         self.tts_workers = max(1, tts_workers)
-        self.voice_ref = voice_ref
+        self.voice_ref_a = voice_ref_a
+        self.voice_ref_b = voice_ref_b
         self.story_count = story_count
         self.bitrate = bitrate
+        self.atempo = atempo
         self.hf_fallback = hf_fallback
         self.hf_token = hf_token
 
         self.script_writer = ScriptWriter(llm_client)
+
+    def _resolve_voice_refs(self) -> tuple[str, str]:
+        """Resolve voice references with single-anchor fallback.
+
+        Returns (voice_a, voice_b) paths. If only one voice file exists,
+        both will point to it for single-anchor mode.
+        """
+        a_exists = Path(self.voice_ref_a).exists()
+        b_exists = Path(self.voice_ref_b).exists()
+
+        if a_exists and b_exists:
+            logger.info("dual_anchor_mode", voice_a=self.voice_ref_a, voice_b=self.voice_ref_b)
+            return self.voice_ref_a, self.voice_ref_b
+        elif a_exists:
+            logger.info("single_anchor_fallback", voice=self.voice_ref_a)
+            return self.voice_ref_a, self.voice_ref_a
+        elif b_exists:
+            logger.info("single_anchor_fallback", voice=self.voice_ref_b)
+            return self.voice_ref_b, self.voice_ref_b
+        else:
+            logger.warning("no_voice_refs_found", a=self.voice_ref_a, b=self.voice_ref_b)
+            return self.voice_ref_a, self.voice_ref_b
 
     def _get_tts_client(self):
         """Lazy-import and create TTS client."""
         from src.podcast.tts_client import TTSClient
 
         return TTSClient(
-            voice_ref_path=self.voice_ref,
-            device=self.tts_device,
             hf_fallback=self.hf_fallback,
             hf_token=self.hf_token,
         )
@@ -89,13 +114,55 @@ class PodcastGenerator:
         """Lazy-import and create audio assembler."""
         from src.podcast.audio_assembler import AudioAssembler
 
-        return AudioAssembler(bitrate=self.bitrate)
+        return AudioAssembler(bitrate=self.bitrate, atempo=self.atempo)
+
+    def _load_recent_manifests(self, n: int = 3) -> list[dict]:
+        """Load the N most recent episode manifests.
+
+        Returns list of manifest dicts sorted newest-first.
+        """
+        manifest_files = sorted(
+            self.output_dir.glob("*.manifest.json"), reverse=True
+        )
+        manifests = []
+        for path in manifest_files[:n]:
+            try:
+                data = json.loads(path.read_text())
+                manifests.append(data)
+            except (json.JSONDecodeError, OSError) as e:
+                logger.warning("manifest_load_failed", path=str(path), error=str(e))
+        logger.info("manifests_loaded", count=len(manifests))
+        return manifests
+
+    def _save_manifest(self, stories: list[dict], timestamp: str) -> Path:
+        """Write episode manifest JSON sidecar alongside the MP3."""
+        now = datetime.now(timezone.utc)
+        manifest = {
+            "timestamp": now.isoformat(),
+            "story_ids": [],
+            "article_urls_by_story": {},
+        }
+        for story in stories:
+            sid = story.get("story_id", "")
+            if sid:
+                manifest["story_ids"].append(sid)
+                urls = [
+                    a.get("url", "")
+                    for a in story.get("articles", [])
+                    if a.get("url")
+                ]
+                manifest["article_urls_by_story"][sid] = urls
+
+        path = self.output_dir / f"dorothy-{timestamp}.manifest.json"
+        path.write_text(json.dumps(manifest, indent=2))
+        logger.info("manifest_saved", path=str(path), stories=len(manifest["story_ids"]))
+        return path
 
     def _select_stories(self) -> list[dict]:
         """Pull top stories from OpenSearch across all columns."""
         syntheses_by_column = {}
         for column in COLUMNS:
-            stories = self.os_client.get_syntheses(column=column, limit=3)
+            stories = self.os_client.get_syntheses(column=column, limit=10)
             if stories:
                 syntheses_by_column[column] = stories
 
@@ -103,8 +170,12 @@ class PodcastGenerator:
             logger.warning("no_syntheses_available")
             return []
 
+        recent_manifests = self._load_recent_manifests()
+
         return self.script_writer.select_top_stories(
-            syntheses_by_column, count=self.story_count
+            syntheses_by_column,
+            count=self.story_count,
+            recent_manifests=recent_manifests,
         )
 
     def generate_script_only(self) -> Optional[dict]:
@@ -171,22 +242,27 @@ class PodcastGenerator:
 
         self.tmp_dir.mkdir(parents=True, exist_ok=True)
 
+        voice_a, voice_b = self._resolve_voice_refs()
+
         # Pre-compute all chunks with their ordering index
-        all_chunks: list[tuple[int, str, str]] = []  # (index, text, label)
+        # Anchor A: intro + odd stories (1, 3, 5...)
+        # Anchor B: even stories (2, 4...) + outro
+        all_chunks: list[tuple[int, str, str, str]] = []  # (index, text, label, voice_ref)
         chunk_idx = 0
 
         for chunk_text in _chunk_sentences(script["intro"], sentences_per_chunk=3):
-            all_chunks.append((chunk_idx, chunk_text, "intro"))
+            all_chunks.append((chunk_idx, chunk_text, "intro", voice_a))
             chunk_idx += 1
 
         for i, story in enumerate(script["stories"]):
             full_text = f"{story['headline_read']} {story['body']}"
+            voice = voice_a if i % 2 == 0 else voice_b  # story 1=A, 2=B, 3=A...
             for chunk_text in _chunk_sentences(full_text, sentences_per_chunk=3):
-                all_chunks.append((chunk_idx, chunk_text, f"story{i + 1}"))
+                all_chunks.append((chunk_idx, chunk_text, f"story{i + 1}", voice))
                 chunk_idx += 1
 
         for chunk_text in _chunk_sentences(script["outro"], sentences_per_chunk=3):
-            all_chunks.append((chunk_idx, chunk_text, "outro"))
+            all_chunks.append((chunk_idx, chunk_text, "outro", voice_b))
             chunk_idx += 1
 
         logger.info(
@@ -198,24 +274,24 @@ class PodcastGenerator:
         # Synthesize chunks (parallel when workers > 1)
         segment_paths: list[Optional[Path]] = [None] * len(all_chunks)
 
-        def _synth_one(idx: int, text: str, label: str) -> tuple[int, Optional[Path]]:
+        def _synth_one(idx: int, text: str, label: str, voice: str) -> tuple[int, Optional[Path]]:
             wav_path = self.tmp_dir / f"{idx:03d}-{label}.wav"
             try:
-                tts.synthesize_to_file(text, wav_path)
+                tts.synthesize_to_file(text, wav_path, voice_ref_path=voice)
                 return (idx, wav_path)
             except Exception as e:
                 logger.warning("tts_chunk_failed", label=label, idx=idx, error=str(e))
                 return (idx, None)
 
         if self.tts_workers <= 1:
-            for idx, text, label in all_chunks:
-                i, path = _synth_one(idx, text, label)
+            for idx, text, label, voice in all_chunks:
+                i, path = _synth_one(idx, text, label, voice)
                 segment_paths[i] = path
         else:
             with ThreadPoolExecutor(max_workers=self.tts_workers) as pool:
                 futures = {
-                    pool.submit(_synth_one, idx, text, label): idx
-                    for idx, text, label in all_chunks
+                    pool.submit(_synth_one, idx, text, label, voice): idx
+                    for idx, text, label, voice in all_chunks
                 }
                 for future in as_completed(futures):
                     i, path = future.result()
@@ -247,17 +323,23 @@ class PodcastGenerator:
             self._cleanup_tmp()
             return None
 
-        # 5. Copy to latest.mp3
+        # 5. Save episode manifest (story tracking for freshness)
+        try:
+            self._save_manifest(stories, timestamp)
+        except Exception as e:
+            logger.warning("manifest_save_failed", error=str(e))
+
+        # 6. Copy to latest.mp3
         latest_path = self.output_dir / "latest.mp3"
         shutil.copy2(mp3_path, latest_path)
 
-        # 6. Update RSS feed
+        # 7. Update RSS feed
         try:
             generate_feed(self.output_dir)
         except Exception as e:
             logger.warning("feed_generation_failed", error=str(e))
 
-        # 7. Cleanup temp
+        # 8. Cleanup temp
         self._cleanup_tmp()
 
         logger.info(

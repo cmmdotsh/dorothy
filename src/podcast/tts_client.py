@@ -1,7 +1,7 @@
 """Text-to-speech client for Dorothy podcast generation.
 
-Uses Chatterbox-TTS for local voice synthesis, with optional HuggingFace
-Inference API fallback.
+Uses mlx-audio with Chatterbox Turbo for MLX-accelerated voice synthesis
+on Apple Silicon, with optional HuggingFace Inference API fallback.
 """
 
 from pathlib import Path
@@ -11,20 +11,19 @@ import structlog
 
 logger = structlog.get_logger(__name__)
 
+MLX_MODEL_ID = "mlx-community/chatterbox-turbo-fp16"
+
 
 class TTSClient:
-    """Wrapper for Chatterbox-TTS with lazy loading and HF fallback."""
+    """Wrapper for mlx-audio Chatterbox Turbo with lazy loading and HF fallback."""
 
     def __init__(
         self,
-        voice_ref_path: str = "config/voices/default.wav",
-        device: str = "cpu",
         hf_fallback: bool = False,
         hf_token: str = "",
         exaggeration: float = 0.3,
+        **kwargs,
     ):
-        self.voice_ref_path = Path(voice_ref_path)
-        self.device = device
         self.hf_fallback = hf_fallback
         self.hf_token = hf_token
         self.exaggeration = exaggeration
@@ -32,9 +31,9 @@ class TTSClient:
         self._sample_rate: Optional[int] = None
 
     def is_available(self) -> bool:
-        """Check if Chatterbox-TTS is importable (or HF fallback is configured)."""
+        """Check if mlx-audio is importable (or HF fallback is configured)."""
         try:
-            import chatterbox.tts  # noqa: F401
+            import mlx_audio.tts  # noqa: F401
 
             return True
         except ImportError:
@@ -42,44 +41,60 @@ class TTSClient:
                 return True
             logger.warning(
                 "tts_unavailable",
-                chatterbox="not installed",
+                mlx_audio="not installed",
                 hf_fallback=self.hf_fallback,
             )
             return False
 
     def _load_model(self):
-        """Lazy-load the Chatterbox model."""
+        """Lazy-load the mlx-audio Chatterbox Turbo model."""
         if self._model is not None:
             return
 
-        import torch
-        from chatterbox.tts import ChatterboxTTS
+        from mlx_audio.tts.utils import load_model
 
-        logger.info("loading_tts_model", device=self.device)
-        self._model = ChatterboxTTS.from_pretrained(device=self.device)
-        self._sample_rate = self._model.sr
-        logger.info("tts_model_loaded", sample_rate=self._sample_rate)
+        logger.info("loading_tts_model", model=MLX_MODEL_ID, backend="mlx")
+        self._model = load_model(MLX_MODEL_ID)
+        logger.info("tts_model_loaded", model=MLX_MODEL_ID)
 
-    def _synthesize_local(self, text: str, output_path: Path) -> Path:
-        """Synthesize speech using local Chatterbox model."""
+    def _synthesize_local(
+        self, text: str, output_path: Path, voice_ref_path: Optional[Path] = None
+    ) -> Path:
+        """Synthesize speech using mlx-audio Chatterbox Turbo."""
         import soundfile as sf
+        import numpy as np
 
         self._load_model()
 
-        voice_ref = self.voice_ref_path if self.voice_ref_path.exists() else None
-        if voice_ref is None:
-            logger.warning("voice_ref_missing", path=str(self.voice_ref_path))
+        voice_ref = voice_ref_path if voice_ref_path and voice_ref_path.exists() else None
+        if voice_ref is None and voice_ref_path:
+            logger.warning("voice_ref_missing", path=str(voice_ref_path))
 
-        wav = self._model.generate(
+        # Generate all chunks and concatenate (stream=False collects into one result)
+        results = list(self._model.generate(
             text,
-            audio_prompt_path=str(voice_ref) if voice_ref else None,
+            ref_audio=str(voice_ref) if voice_ref else None,
             exaggeration=self.exaggeration,
-        )
+            stream=False,
+        ))
 
-        # wav is a torch tensor [1, samples] — convert to numpy for soundfile
-        audio_np = wav.squeeze(0).cpu().numpy()
-        sf.write(str(output_path), audio_np, self._sample_rate)
-        logger.debug("tts_segment_saved", path=str(output_path))
+        if not results:
+            raise RuntimeError(f"TTS generated no audio for: {text[:50]}...")
+
+        result = results[0]
+        sample_rate = result.sample_rate
+
+        # result.audio is an mlx.core.array — convert to numpy
+        audio_np = np.array(result.audio, copy=False)
+        if audio_np.ndim > 1:
+            audio_np = audio_np.squeeze()
+
+        sf.write(str(output_path), audio_np, sample_rate)
+        logger.debug(
+            "tts_segment_saved",
+            path=str(output_path),
+            rtf=round(result.real_time_factor, 2),
+        )
         return output_path
 
     def _synthesize_hf(self, text: str, output_path: Path) -> Path:
@@ -98,23 +113,27 @@ class TTSClient:
         logger.debug("tts_hf_segment_saved", path=str(output_path))
         return output_path
 
-    def synthesize_to_file(self, text: str, output_path: Path) -> Path:
+    def synthesize_to_file(
+        self, text: str, output_path: Path, voice_ref_path: Optional[str] = None
+    ) -> Path:
         """Generate WAV/FLAC for a text segment.
 
-        Tries local Chatterbox first, falls back to HF API if configured.
+        Tries local mlx-audio first, falls back to HF API if configured.
 
         Args:
             text: Text to synthesize.
             output_path: Where to write the audio file.
+            voice_ref_path: Optional path to voice reference WAV file.
 
         Returns:
             Path to the written audio file.
         """
         output_path = Path(output_path)
         output_path.parent.mkdir(parents=True, exist_ok=True)
+        ref_path = Path(voice_ref_path) if voice_ref_path else None
 
         try:
-            return self._synthesize_local(text, output_path)
+            return self._synthesize_local(text, output_path, voice_ref_path=ref_path)
         except ImportError:
             if self.hf_fallback and self.hf_token:
                 logger.info("tts_falling_back_to_hf")

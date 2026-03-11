@@ -10,8 +10,9 @@ logger = structlog.get_logger(__name__)
 class AudioAssembler:
     """Concatenates audio segments with silence gaps and exports as MP3."""
 
-    def __init__(self, bitrate: str = "128k"):
+    def __init__(self, bitrate: str = "128k", atempo: float = 1.0):
         self.bitrate = bitrate
+        self.atempo = atempo
 
     @staticmethod
     def _section_label(path: Path) -> str:
@@ -29,12 +30,14 @@ class AudioAssembler:
         section_gap_ms: int = 800,
         lead_silence_ms: int = 500,
         trail_silence_ms: int = 1000,
+        crossfade_ms: int = 80,
     ) -> Path:
         """Concatenate audio segments with silence gaps and export as MP3.
 
         Uses short gaps between chunks within the same section (e.g. two
         chunks of the same story) and longer gaps between sections (e.g.
-        between stories, or between intro and first story).
+        between stories, or between intro and first story). A crossfade is
+        applied at each join to smooth out abrupt transitions.
 
         Args:
             segment_paths: Ordered list of WAV/FLAC file paths.
@@ -43,6 +46,7 @@ class AudioAssembler:
             section_gap_ms: Silence between different sections.
             lead_silence_ms: Silence before first segment.
             trail_silence_ms: Silence after last segment.
+            crossfade_ms: Crossfade duration at each segment join.
 
         Returns:
             Path to the output file.
@@ -71,7 +75,13 @@ class AudioAssembler:
                 else:
                     combined += chunk_gap
 
-            combined += segment
+            # Crossfade into the segment to smooth abrupt transitions.
+            # Clamp to avoid crossfading more than the segment length.
+            fade = min(crossfade_ms, len(segment) // 2, len(combined) // 2)
+            if fade > 0:
+                combined = combined.append(segment, crossfade=fade)
+            else:
+                combined += segment
             prev_section = section
 
         combined += AudioSegment.silent(duration=trail_silence_ms)
@@ -79,11 +89,30 @@ class AudioAssembler:
         # Force mono for speech
         combined = combined.set_channels(1)
 
+        # Normalize to -1 dBFS to ensure consistent volume without clipping
+        target_dbfs = -1.0
+        gain_needed = target_dbfs - combined.max_dBFS
+        if gain_needed != 0:
+            combined = combined.apply_gain(gain_needed)
+            logger.info("audio_normalized", gain_db=round(gain_needed, 1), target_dbfs=target_dbfs)
+
+        # Apply atempo time-stretch via ffmpeg (pitch-preserving speed change)
+        ffmpeg_params = []
+        if self.atempo != 1.0:
+            ffmpeg_params = ["-filter:a", f"atempo={self.atempo}"]
+            logger.info("audio_atempo", speed=self.atempo)
+
         output_format = output_path.suffix.lstrip(".")
         if output_format == "mp3":
-            combined.export(str(output_path), format="mp3", bitrate=self.bitrate)
+            combined.export(
+                str(output_path), format="mp3", bitrate=self.bitrate,
+                parameters=ffmpeg_params or None,
+            )
         else:
-            combined.export(str(output_path), format=output_format)
+            combined.export(
+                str(output_path), format=output_format,
+                parameters=ffmpeg_params or None,
+            )
 
         duration_secs = len(combined) / 1000.0
         logger.info(

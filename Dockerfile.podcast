@@ -1,0 +1,36 @@
+# Dorothy Podcast Generator
+
+FROM python:3.12-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl ffmpeg build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY pyproject.toml .
+# chatterbox-tts pins numpy<1.26 but works fine with numpy 2.x (verified locally).
+# Old numpy 1.25 has no linux/aarch64 binary wheel and fails to build on 3.12+.
+# Strategy: install base deps first, then force-install chatterbox without its
+# numpy constraint, then install remaining podcast deps.
+RUN pip install --upgrade pip "setuptools>=75" wheel numpy cython scikit-learn \
+    && pip install --no-build-isolation pkuseg==0.0.25 hdbscan \
+    && pip install . \
+    && pip install --no-deps chatterbox-tts \
+    && pip install pydub torchaudio torch conformer diffusers gradio librosa \
+        omegaconf pykakasi pyloudnorm resemble-perth s3tokenizer safetensors \
+        spacy-pkuseg transformers \
+    && pip install boto3 markdown-it-py markupsafe
+
+COPY src/ src/
+COPY config/ config/
+COPY scripts/ scripts/
+
+RUN mkdir -p /app/output
+
+CMD ["python", "-m", "scripts.run_podcast", "--daemon"]

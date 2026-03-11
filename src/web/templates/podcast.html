@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+
+{% block title %}Podcast{% endblock %}
+
+{% block content %}
+<div class="podcast-page">
+    <h1 class="section-title">Dorothy Podcast</h1>
+
+    {% if latest_episode %}
+    <div class="podcast-featured">
+        <h2 class="featured-title">{{ latest_episode.title }}</h2>
+        <div class="podcast-player" id="featured-player">
+            <button class="player-play-btn" id="fp-play" aria-label="Play episode">&#9654;</button>
+            <div class="player-progress-wrap" id="fp-progress-wrap">
+                <div class="player-progress-bar" id="fp-progress-bar"></div>
+            </div>
+            <span class="player-time" id="fp-time">{{ latest_episode.duration or '0:00' }}</span>
+        </div>
+        <audio id="fp-audio" preload="none" src="/podcast/{{ latest_episode.filename }}"></audio>
+    </div>
+    {% endif %}
+
+    <div class="podcast-subscribe">
+        <a href="/podcast/feed.xml" class="subscribe-link">Subscribe via RSS</a>
+    </div>
+
+    <hr class="fold-rule">
+
+    <h2 class="archive-heading">Archive</h2>
+    <table class="episode-table">
+        <thead>
+            <tr>
+                <th>Date</th>
+                <th>Episode</th>
+                <th>Duration</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for ep in episodes %}
+            <tr>
+                <td class="ep-date">{{ ep.pub_date }}</td>
+                <td class="ep-title">{{ ep.title }}</td>
+                <td class="ep-duration">{{ ep.duration }}</td>
+                <td class="ep-play"><a href="/podcast/{{ ep.filename }}" class="play-link">&#9654; Play</a></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

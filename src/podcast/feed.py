@@ -85,6 +85,11 @@ def generate_feed(
 
         SubElement(item, "guid").text = enclosure_url
 
+        # Estimate duration from file size (128 kbps bitrate)
+        duration_secs = int(file_size * 8 / 128000)
+        minutes, seconds = divmod(duration_secs, 60)
+        SubElement(item, "itunes:duration").text = f"{minutes}:{seconds:02d}"
+
         SubElement(item, "description").text = (
             f"Dorothy news briefing for {ep_date.strftime('%B %d, %Y')}. "
             "Top stories synthesized from sources across the political spectrum."
