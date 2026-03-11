@@ -58,7 +58,7 @@ class LLMSettings(BaseSettings):
     """LLM service settings for story synthesis."""
 
     base_url: str = "http://192.168.0.149:1234"
-    model: str = "qwen/qwen3-30b-a3b-2507"
+    model: str = "mlx-community/qwen3.5-35b-a3b"
     temperature: float = 0.3
     max_tokens: int = 1500
     context_length: int = 32768
@@ -121,6 +121,7 @@ class DorothyConfig:
                     column=Column(src["column"]),
                     bias=BiasRating(src["bias"]),
                     region=src.get("region"),
+                    perspective=src.get("perspective"),
                     active=src.get("active", True),
                 )
             )

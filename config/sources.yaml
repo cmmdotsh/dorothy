@@ -261,30 +261,26 @@ sources:
     active: false  # Cloudflare blocking - may need alternative
 
   # ============================================================================
-  # TECH
+  # TECH — Perspective tagging (bias is vestigial, perspective is the key dimension)
   # ============================================================================
-  - name: "Ars Technica"
-    slug: "arstechnica"
-    rss_url: "https://feeds.arstechnica.com/arstechnica/index"
+
+  # Consumer — products, gadgets, apps, user-facing tech
+  - name: "CNET"
+    slug: "cnet"
+    rss_url: "https://www.cnet.com/rss/news/"
     fetch_method: rss
     column: tech
     bias: center
+    perspective: consumer
     active: true
 
-  - name: "TechCrunch"
-    slug: "techcrunch"
-    rss_url: "https://techcrunch.com/feed/"
+  - name: "Engadget"
+    slug: "engadget"
+    rss_url: "https://www.engadget.com/rss.xml"
     fetch_method: rss
     column: tech
-    bias: lean-left
-    active: true
-
-  - name: "Wired"
-    slug: "wired"
-    rss_url: "https://www.wired.com/feed/rss"
-    fetch_method: rss
-    column: tech
-    bias: lean-left
+    bias: center
+    perspective: consumer
     active: true
 
   - name: "The Verge"
@@ -292,7 +288,74 @@ sources:
     rss_url: "https://www.theverge.com/rss/index.xml"
     fetch_method: rss
     column: tech
-    bias: lean-left
+    bias: center
+    perspective: consumer
+    active: true
+
+  # Enterprise — business tech, IT, industry analysis
+  - name: "ZDNet"
+    slug: "zdnet"
+    rss_url: "https://www.zdnet.com/news/rss.xml"
+    fetch_method: rss
+    column: tech
+    bias: center
+    perspective: enterprise
+    active: true
+
+  - name: "TechCrunch"
+    slug: "techcrunch"
+    rss_url: "https://techcrunch.com/feed/"
+    fetch_method: rss
+    column: tech
+    bias: center
+    perspective: enterprise
+    active: true
+
+  - name: "Ars Technica"
+    slug: "arstechnica"
+    rss_url: "https://feeds.arstechnica.com/arstechnica/index"
+    fetch_method: rss
+    column: tech
+    bias: center
+    perspective: enterprise
+    active: true
+
+  # Academic — research, engineering, deep tech
+  - name: "MIT Technology Review"
+    slug: "mittech"
+    rss_url: "https://www.technologyreview.com/feed/"
+    fetch_method: rss
+    column: tech
+    bias: center
+    perspective: academic
+    active: true
+
+  - name: "IEEE Spectrum"
+    slug: "ieee"
+    rss_url: "https://spectrum.ieee.org/feeds/feed.rss"
+    fetch_method: rss
+    column: tech
+    bias: center
+    perspective: academic
+    active: true
+
+  # Culture — tech through societal, cultural, political lens
+  - name: "Wired"
+    slug: "wired"
+    rss_url: "https://www.wired.com/feed/rss"
+    fetch_method: rss
+    column: tech
+    bias: center
+    perspective: culture
+    active: true
+
+  - name: "Gizmodo"
+    slug: "gizmodo"
+    rss_url: "https://gizmodo.com/feed"
+    fetch_method: rss
+    column: tech
+    bias: center
+    perspective: culture
     active: true
 
   # ============================================================================
@@ -670,4 +733,84 @@ sources:
     fetch_method: rss
     column: lifestyle
     bias: lean-left
+    active: true
+
+  - name: "NYT Arts"
+    slug: "nyt-arts"
+    rss_url: "https://rss.nytimes.com/services/xml/rss/nyt/Arts.xml"
+    fetch_method: rss
+    column: lifestyle
+    bias: lean-left
+    active: true
+
+  - name: "The Guardian Culture"
+    slug: "guardian-culture"
+    rss_url: "https://www.theguardian.com/us/culture/rss"
+    fetch_method: rss
+    column: lifestyle
+    bias: lean-left
+    active: true
+
+  - name: "Rolling Stone Culture"
+    slug: "rollingstone"
+    rss_url: "https://www.rollingstone.com/culture/feed/"
+    fetch_method: rss
+    column: lifestyle
+    bias: lean-left
+    active: true
+
+  - name: "Vanity Fair"
+    slug: "vanityfair"
+    rss_url: "https://www.vanityfair.com/feed/rss"
+    fetch_method: rss
+    column: lifestyle
+    bias: lean-left
+    active: true
+
+  - name: "Newsweek"
+    slug: "newsweek"
+    rss_url: "https://www.newsweek.com/rss"
+    fetch_method: rss
+    column: lifestyle
+    bias: center
+    active: true
+
+  - name: "Fox News Lifestyle"
+    slug: "fox-lifestyle"
+    rss_url: "https://moxie.foxnews.com/google-publisher/lifestyle.xml"
+    fetch_method: rss
+    column: lifestyle
+    bias: lean-right
+    active: true
+
+  - name: "Fox News Entertainment"
+    slug: "fox-entertainment"
+    rss_url: "https://moxie.foxnews.com/google-publisher/entertainment.xml"
+    fetch_method: rss
+    column: lifestyle
+    bias: lean-right
+    active: true
+
+  - name: "Washington Times Culture"
+    slug: "washtimes-culture"
+    rss_url: "https://www.washingtontimes.com/rss/headlines/culture/"
+    fetch_method: rss
+    column: lifestyle
+    bias: lean-right
+    active: true
+
+  - name: "National Review Culture"
+    slug: "nationalreview-culture"
+    rss_url: "https://www.nationalreview.com/culture/feed/"
+    fetch_method: rss
+    column: lifestyle
+    bias: right
+    active: true
+
+  - name: "Breitbart Entertainment"
+    slug: "breitbart-entertainment"
+    rss_url: "https://www.breitbart.com/entertainment/feed/"
+    fetch_method: rss
+    column: lifestyle
+    bias: right
     active: true

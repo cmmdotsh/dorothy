@@ -1,5 +1,5 @@
 """Data models for Dorothy."""
 
-from .article import Article, BiasRating, Column, FetchMethod, Region, Source
+from .article import Article, BiasRating, Column, FetchMethod, Perspective, Region, Source
 
-__all__ = ["Article", "Source", "BiasRating", "Column", "FetchMethod", "Region"]
+__all__ = ["Article", "Source", "BiasRating", "Column", "FetchMethod", "Perspective", "Region"]

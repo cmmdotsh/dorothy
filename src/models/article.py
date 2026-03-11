@@ -37,6 +37,15 @@ class Region(str, Enum):
     INTERNATIONAL = "international"
 
 
+class Perspective(str, Enum):
+    """Editorial perspective for tech sources."""
+
+    CONSUMER = "consumer"
+    ENTERPRISE = "enterprise"
+    ACADEMIC = "academic"
+    CULTURE = "culture"
+
+
 class Column(str, Enum):
     """News column/category classification."""
 
@@ -92,6 +101,11 @@ class Article(BaseModel):
         None, description="Geographic region of source (sports column only)"
     )
 
+    # Perspective (tech only)
+    source_perspective: Optional[str] = Field(
+        None, description="Editorial perspective of source (tech column only)"
+    )
+
     # Image from RSS feed
     image_url: Optional[str] = Field(
         None, description="Article thumbnail/hero image URL"
@@ -118,6 +132,7 @@ class Article(BaseModel):
             "pub_date": self.pub_date.isoformat(),
             "fetched_at": self.fetched_at.isoformat(),
             "source_region": self.source_region,
+            "source_perspective": self.source_perspective,
             "embedding": self.embedding,
             "image_url": self.image_url,
         }
@@ -133,4 +148,5 @@ class Source(BaseModel):
     column: Column
     bias: BiasRating
     region: Optional[str] = None
+    perspective: Optional[str] = None
     active: bool = True
