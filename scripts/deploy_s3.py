@@ -65,6 +65,8 @@ CONTENT_TYPES = {
     ".ico": "image/x-icon",
     ".woff": "font/woff",
     ".woff2": "font/woff2",
+    ".mp3": "audio/mpeg",
+    ".xml": "application/xml; charset=utf-8",
 }
 
 # Cache control settings
@@ -75,6 +77,8 @@ CACHE_CONTROL = {
     ".png": "public, max-age=86400",  # 1 day for images
     ".jpg": "public, max-age=86400",
     ".jpeg": "public, max-age=86400",
+    ".mp3": "public, max-age=3600",  # 1 hour for podcast episodes
+    ".xml": "public, max-age=300",  # 5 minutes for RSS feeds
 }
 
 
@@ -152,16 +156,29 @@ class S3Deployer:
             logger.error("upload_failed", path=s3_key, error=str(e))
             return False
 
-    def sync(self) -> dict:
-        """Sync all files to S3."""
+    def sync(self, exclude_dirs: set[str] | None = None) -> dict:
+        """Sync all files to S3.
+
+        Args:
+            exclude_dirs: Top-level directory names under source_dir to skip.
+                          E.g. {"podcast"} to let the podcast process manage its own uploads.
+        """
         start = datetime.now(timezone.utc)
+        exclude_dirs = exclude_dirs or set()
 
         if not self.source_dir.exists():
             raise FileNotFoundError(f"Source directory not found: {self.source_dir}")
 
-        # Collect all files
-        files = list(self.source_dir.rglob("*"))
-        files = [f for f in files if f.is_file()]
+        # Collect all files, skipping excluded top-level directories
+        files = []
+        for f in self.source_dir.rglob("*"):
+            if not f.is_file():
+                continue
+            # Check if this file is under an excluded top-level dir
+            rel = f.relative_to(self.source_dir)
+            if rel.parts and rel.parts[0] in exclude_dirs:
+                continue
+            files.append(f)
 
         if not files:
             console.print("[yellow]No files to upload[/yellow]")

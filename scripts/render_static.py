@@ -74,6 +74,20 @@ REGION_LABELS = {
     "international": "Intl",
 }
 
+PERSPECTIVE_COLORS = {
+    "consumer": "#3b82f6",
+    "enterprise": "#f97316",
+    "academic": "#a855f7",
+    "culture": "#22c55e",
+}
+
+PERSPECTIVE_LABELS = {
+    "consumer": "Consumer",
+    "enterprise": "Enterprise",
+    "academic": "Academic",
+    "culture": "Culture",
+}
+
 
 def _dedup_stories(stories: list[dict], threshold: float = 0.3) -> list[dict]:
     """Remove duplicates based on article URL overlap (Jaccard > threshold).
@@ -192,7 +206,7 @@ class StaticSiteGenerator:
     def copy_static_assets(self) -> None:
         """Copy static files to output with content-hashed filenames for CSS/JS."""
         self.assets = {}
-        hash_files = {"style.css", "app.js"}
+        hash_files = {"style.css", "app.js", "similarity-web.js"}
 
         if not self.static_dir.exists():
             return
@@ -259,7 +273,7 @@ class StaticSiteGenerator:
 
     def get_stories_for_column(self, column: str, limit: int = 20) -> list[dict]:
         """Get synthesized stories for a column (deduped)."""
-        stories = self.os_client.get_syntheses(column=column, limit=limit * 2)
+        stories = self.os_client.get_syntheses(column=column, limit=max(limit * 5, 50))
         stories = _dedup_stories(stories)[:limit]
         return [self._backfill_image_credit(s) for s in stories]
 
@@ -286,6 +300,8 @@ class StaticSiteGenerator:
             "bias_colors": BIAS_COLORS,
             "region_colors": REGION_COLORS,
             "region_labels": REGION_LABELS,
+            "perspective_colors": PERSPECTIVE_COLORS,
+            "perspective_labels": PERSPECTIVE_LABELS,
             "generated_at": now.isoformat(),
             "dateline": now.strftime("%A, %B %-d, %Y"),
             "edition": context.get("edition") or self.get_edition() or 1,

@@ -170,16 +170,16 @@ def run_synthesis(
                     if batch_dup:
                         continue
 
-                    existing = os_client.find_overlapping_synthesis(cluster_urls)
+                    existing = os_client.find_overlapping_synthesis(cluster_urls, column=column)
                     if existing:
                         jaccard = existing.get("jaccard", 0)
                         existing_urls = set(existing.get("article_urls", []))
                         new_urls = cluster_url_set - existing_urls
 
-                        # Any overlap above 0.3 means it's the same event.
+                        # Any overlap above 0.15 means it's the same event.
                         # Only re-synthesize if there are 3+ genuinely new
                         # articles (meaningful new coverage), otherwise skip.
-                        if jaccard > 0.3 and len(new_urls) < 3:
+                        if jaccard > 0.15 and len(new_urls) < 3:
                             logger.info(
                                 "story_unchanged",
                                 story_id=story.id,
@@ -282,7 +282,7 @@ def run_render_deploy() -> None:
             region=os.environ.get("AWS_REGION", "us-east-1"),
             cloudfront_id=cloudfront_id,
         )
-        result = deployer.sync()
+        result = deployer.sync(exclude_dirs={"podcast"})
         console.print(f"[green]  Uploaded {result['uploaded']} files[/green]")
         if cloudfront_id:
             deployer.invalidate_cloudfront()
