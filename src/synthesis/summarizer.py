@@ -32,6 +32,14 @@ REGION_LABELS = {
     "international": "International",
 }
 
+PERSPECTIVE_ORDER = ["consumer", "enterprise", "academic", "culture"]
+PERSPECTIVE_LABELS = {
+    "consumer": "Consumer",
+    "enterprise": "Enterprise",
+    "academic": "Academic",
+    "culture": "Culture",
+}
+
 # ── Pass 1: Neutral Article ──
 
 ARTICLE_SYSTEM_PROMPT = """You are a senior wire service journalist. Your job is to write
@@ -88,6 +96,34 @@ Guidelines:
 - Write in an analytical but accessible tone
 - Respond in JSON with an "analysis" field"""
 
+# ── Tech-specific prompts ──
+
+TECH_ARTICLE_SYSTEM_PROMPT = """You are a senior technology journalist. Your job is to write
+clear, factual, comprehensive tech articles from multiple source reports across different
+editorial perspectives — consumer, enterprise, academic, and cultural.
+
+Guidelines:
+- Write in standard tech journalism style: lead with the key development or announcement,
+  then expanding detail in subsequent paragraphs
+- Use neutral, precise language — no hype or editorializing
+- Note how different perspectives frame the same story when relevant
+- Include relevant technical context, market data, and background
+- Write as if this is the definitive account of the story
+- Respond in JSON with "headline" and "article" fields"""
+
+TECH_ANALYSIS_SYSTEM_PROMPT = """You are a tech media analyst who studies how outlets with
+different editorial perspectives cover the same technology stories differently. Consumer
+outlets focus on products and users, enterprise outlets on business impact, academic outlets
+on research and engineering, and culture outlets on societal implications.
+
+Guidelines:
+- Focus on perspective differences: what a consumer outlet emphasizes vs enterprise, vs academic
+- Note which perspectives covered the story and which didn't
+- Identify differences in framing, technical depth, and what implications get highlighted
+- Be specific — cite outlet names and concrete examples
+- Explain why perspectives differ (audience, editorial mission, expertise)
+- Write in an analytical but accessible tone
+- Respond in JSON with an "analysis" field"""
 
 
 def _extract_json(raw: str) -> str:
@@ -97,8 +133,9 @@ def _extract_json(raw: str) -> str:
     """
     # Strip markdown code fences
     cleaned = re.sub(r"```(?:json)?\s*", "", raw).strip().rstrip("`")
-    # Strip <think>...</think> blocks (Qwen thinking mode)
+    # Strip <think>...</think> blocks (Qwen thinking mode), including unclosed blocks
     cleaned = re.sub(r"<think>.*?</think>\s*", "", cleaned, flags=re.DOTALL).strip()
+    cleaned = re.sub(r"<think>.*", "", cleaned, flags=re.DOTALL).strip()
     # Find the first { ... last }
     start = cleaned.find("{")
     end = cleaned.rfind("}")
@@ -148,6 +185,7 @@ class SynthesizedStory:
     hero_image_url: Optional[str] = None
     hero_image_source: Optional[str] = None
     article_urls: list[str] = field(default_factory=list)
+    similarity_edges: list[dict] = field(default_factory=list)
     edition: int = 1
     is_current: bool = True
     hotness_score: float = 0.0
@@ -176,6 +214,7 @@ class SynthesizedStory:
             "hero_image_url": self.hero_image_url,
             "hero_image_source": self.hero_image_source,
             "article_urls": self.article_urls,
+            "similarity_edges": self.similarity_edges,
             "edition": self.edition,
             "is_current": self.is_current,
             "hotness_score": self.hotness_score,
@@ -246,9 +285,11 @@ def compute_story_timing(articles: list[dict], now: Optional[datetime] = None) -
     hours_since_median = max(1.0, (now - median_date).total_seconds() / 3600)
     article_count = len(articles)
 
-    is_sports = any(a.get("column") == "sports" for a in articles)
-    if is_sports:
+    column = next((a.get("column") for a in articles if a.get("column")), None)
+    if column == "sports":
         unique_dims = len(set(a.get("source_region", "unknown") for a in articles))
+    elif column == "tech":
+        unique_dims = len(set(a.get("source_perspective", "unknown") for a in articles))
     else:
         unique_dims = len(set(a.get("source_bias", "unknown") for a in articles))
     source_diversity_bonus = 1.0 + 0.1 * max(0, unique_dims - 1)
@@ -281,9 +322,20 @@ class StorySummarizer:
             logger.info("token_budget_resolved", budget=self._token_budget)
         return self._token_budget
 
+    def _story_column(self, story: Story) -> str:
+        """Get the column of a story."""
+        return next(
+            (a.get("column") for a in story.articles if a.get("column")),
+            "politics",
+        )
+
     def _is_sports_story(self, story: Story) -> bool:
         """Check if a story is from the sports column."""
-        return any(a.get("column") == "sports" for a in story.articles)
+        return self._story_column(story) == "sports"
+
+    def _is_tech_story(self, story: Story) -> bool:
+        """Check if a story is from the tech column."""
+        return self._story_column(story) == "tech"
 
     def _group_articles_by_bias(self, story: Story) -> dict[str, list[dict]]:
         """Group story articles by bias rating."""
@@ -300,6 +352,34 @@ class StorySummarizer:
             region = article.get("source_region", "unknown")
             by_region[region].append(article)
         return dict(by_region)
+
+    def _group_articles_by_perspective(self, story: Story) -> dict[str, list[dict]]:
+        """Group story articles by editorial perspective."""
+        by_perspective: dict[str, list[dict]] = defaultdict(list)
+        for article in story.articles:
+            perspective = article.get("source_perspective", "unknown")
+            by_perspective[perspective].append(article)
+        return dict(by_perspective)
+
+    def _build_articles_text_by_perspective(
+        self,
+        by_perspective: dict[str, list[dict]],
+    ) -> str:
+        """Format source articles grouped by perspective into a text block."""
+        sections = []
+        for perspective in PERSPECTIVE_ORDER:
+            articles = by_perspective.get(perspective, [])
+            if not articles:
+                continue
+            formatted = "\n".join(self._format_article(a) for a in articles)
+            label = PERSPECTIVE_LABELS.get(perspective, perspective.upper())
+            sections.append(f"### {label}\n{formatted}")
+        # Include any unknown-perspective articles
+        unknown = by_perspective.get("unknown", [])
+        if unknown:
+            formatted = "\n".join(self._format_article(a) for a in unknown)
+            sections.append(f"### Other\n{formatted}")
+        return "\n\n".join(sections)
 
     def _build_articles_text_by_region(
         self,
@@ -390,15 +470,21 @@ class StorySummarizer:
         Build the synthesis prompt, using all articles if they fit in the
         token budget, otherwise sampling representative articles per bucket.
 
-        Sports stories are grouped by region; all others by bias.
+        Sports stories are grouped by region; tech by perspective; all others by bias.
         """
         is_sports = self._is_sports_story(story)
+        is_tech = self._is_tech_story(story)
 
         if is_sports:
             by_bucket = self._group_articles_by_region(story)
             build_text = self._build_articles_text_by_region
             bucket_order = REGION_ORDER
             system_prompt = SPORTS_ARTICLE_SYSTEM_PROMPT
+        elif is_tech:
+            by_bucket = self._group_articles_by_perspective(story)
+            build_text = self._build_articles_text_by_perspective
+            bucket_order = PERSPECTIVE_ORDER
+            system_prompt = TECH_ARTICLE_SYSTEM_PROMPT
         else:
             by_bucket = self._group_articles_by_bias(story)
             build_text = self._build_articles_text
@@ -462,11 +548,29 @@ class StorySummarizer:
         }
         return build_text(sampled)
 
+    # URL patterns that indicate a tiny thumbnail
+    _THUMB_PATTERNS = re.compile(
+        r'/thumb[s]?/'
+        r'|[-_.]thumb\.'
+        r'|[-_.]small\.'
+        r'|[-_.]tiny\.'
+        r'|[-_./]\d{2,3}x\d{2,3}[-_./]'  # e.g. 120x90, 150x150
+        r'|/s\d{2,3}/'            # e.g. /s100/
+        r'|[?&]w=\d{1,2}\b'      # e.g. ?w=75
+        r'|[?&]width=\d{1,2}\b',
+        re.IGNORECASE,
+    )
+
+    def _is_hero_worthy(self, url: str) -> bool:
+        """Check if an image URL looks like a full-size image (not a thumbnail)."""
+        return not self._THUMB_PATTERNS.search(url)
+
     def _pick_hero_image(self, articles: list[dict], is_sports: bool = False) -> tuple[Optional[str], Optional[str]]:
         """Pick the best hero image from articles.
 
         For non-sports: prefers center sources for neutral framing.
         For sports: just picks the first available image.
+        Filters out obvious thumbnails by URL pattern.
 
         Returns:
             (image_url, source_name) tuple
@@ -475,15 +579,54 @@ class StorySummarizer:
             preference_order = ["center", "lean-left", "lean-right", "left", "right"]
             for bias in preference_order:
                 for article in articles:
-                    if article.get("source_bias") == bias and article.get("image_url"):
-                        return article["image_url"], article.get("source_name", "")
+                    url = article.get("image_url", "")
+                    if article.get("source_bias") == bias and url and self._is_hero_worthy(url):
+                        return url, article.get("source_name", "")
 
-        # Fallback (or sports default): first article with any image
+        # Fallback (or sports default): first article with a decent image
+        for article in articles:
+            url = article.get("image_url", "")
+            if url and self._is_hero_worthy(url):
+                return url, article.get("source_name", "")
+
+        # Last resort: any image at all
         for article in articles:
             if article.get("image_url"):
                 return article["image_url"], article.get("source_name", "")
 
         return None, None
+
+    def _compute_similarity_edges(self, articles: list[dict], threshold: float = 0.3) -> list[dict]:
+        """Compute pairwise cosine similarity between articles with embeddings.
+
+        Returns edge list with indices into the articles list:
+        [{"source": 0, "target": 2, "similarity": 0.87}, ...]
+        """
+        embeddings = []
+        indices = []
+        for i, a in enumerate(articles):
+            if a.get("embedding"):
+                embeddings.append(a["embedding"])
+                indices.append(i)
+
+        if len(embeddings) < 2:
+            return []
+
+        emb_matrix = np.array(embeddings)
+        dist_matrix = cosine_distances(emb_matrix)
+
+        edges = []
+        for i in range(len(indices)):
+            for j in range(i + 1, len(indices)):
+                similarity = 1.0 - dist_matrix[i][j]
+                if similarity >= threshold:
+                    edges.append({
+                        "source": indices[i],
+                        "target": indices[j],
+                        "similarity": round(float(similarity), 4),
+                    })
+
+        return edges
 
     def _build_article_refs(self, articles: list[dict]) -> list[dict]:
         """Build article reference list for storage."""
@@ -495,6 +638,7 @@ class StorySummarizer:
                 "source_slug": a.get("source_slug", ""),
                 "source_bias": a.get("source_bias", ""),
                 "source_region": a.get("source_region"),
+                "source_perspective": a.get("source_perspective"),
                 "image_url": a.get("image_url"),
             }
             for a in articles
@@ -519,6 +663,7 @@ class StorySummarizer:
             return None
 
         is_sports = self._is_sports_story(story)
+        is_tech = self._is_tech_story(story)
 
         # _build_prompt returns the formatted source articles text,
         # already token-budget-aware (sampled if needed).
@@ -533,6 +678,15 @@ class StorySummarizer:
                 "and countries covered this story.\n"
                 "Focus on regional differences in emphasis, framing, which athletes or teams "
                 "get prominence, and what was included or omitted.\n"
+            )
+        elif is_tech:
+            article_sys = TECH_ARTICLE_SYSTEM_PROMPT
+            analysis_sys = TECH_ANALYSIS_SYSTEM_PROMPT
+            analysis_focus = (
+                "Write a coverage analysis that examines how outlets from different editorial "
+                "perspectives covered this technology story.\n"
+                "Focus on differences between consumer, enterprise, academic, and cultural "
+                "framing — what each perspective emphasizes, downplays, or omits.\n"
             )
         else:
             article_sys = ARTICLE_SYSTEM_PROMPT
@@ -612,6 +766,7 @@ class StorySummarizer:
             )
 
             sources_used = list(set(a.get("source_slug", "") for a in story.articles))
+            similarity_edges = self._compute_similarity_edges(story.articles)
             article_refs = self._build_article_refs(story.articles)
             hero_image_url, hero_image_source = self._pick_hero_image(story.articles, is_sports)
             article_urls = sorted(str(a.get("url", "")) for a in story.articles if a.get("url"))
@@ -633,6 +788,7 @@ class StorySummarizer:
                 hero_image_url=hero_image_url,
                 hero_image_source=hero_image_source,
                 article_urls=article_urls,
+                similarity_edges=similarity_edges,
                 hotness_score=timing.hotness_score,
                 median_pub_date=timing.median_pub_date,
                 first_pub_date=timing.first_pub_date,

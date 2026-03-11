@@ -58,12 +58,26 @@ class Story:
         return dict(spread)
 
     @property
+    def perspective_spread(self) -> dict[str, int]:
+        """Count of articles by editorial perspective."""
+        spread: dict[str, int] = defaultdict(int)
+        for article in self.articles:
+            perspective = article.get("source_perspective", "unknown")
+            spread[perspective] += 1
+        return dict(spread)
+
+    @property
     def coverage_spread(self) -> dict[str, int]:
-        """Region spread for sports stories, bias spread otherwise."""
-        is_sports = any(
-            article.get("column") == "sports" for article in self.articles
+        """Region spread for sports, perspective for tech, bias otherwise."""
+        column = next(
+            (a.get("column") for a in self.articles if a.get("column")),
+            None,
         )
-        return self.region_spread if is_sports else self.bias_spread
+        if column == "sports":
+            return self.region_spread
+        elif column == "tech":
+            return self.perspective_spread
+        return self.bias_spread
 
     def to_dict(self) -> dict:
         """Convert to dictionary representation."""

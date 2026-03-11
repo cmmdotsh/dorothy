@@ -169,12 +169,19 @@ class LLMClient:
         temperature: Optional[float] = None,
         max_tokens: Optional[int] = None,
         response_format: Optional[dict] = None,
+        chat_template_kwargs: Optional[dict] = None,
+        skip_thinking: bool = False,
     ) -> str:
         """
         Generate text completion.
 
         Ensures model is loaded before generating. Passes ttl=-1 to
         prevent LMStudio from auto-unloading the model between requests.
+
+        Args:
+            skip_thinking: If True, prepend an assistant message with an empty
+                <think></think> block to prevent Qwen3.5 from entering thinking
+                mode (LMStudio ignores chat_template_kwargs).
         """
         # Ensure model is loaded with correct settings
         if not self._model_verified:
@@ -187,6 +194,9 @@ class LLMClient:
 
         messages.append({"role": "user", "content": prompt})
 
+        if skip_thinking:
+            messages.append({"role": "assistant", "content": "<think>\n</think>\n"})
+
         max_retries = 3
         request_json = {
             "model": self.model,
@@ -197,6 +207,8 @@ class LLMClient:
         }
         if response_format is not None:
             request_json["response_format"] = response_format
+        if chat_template_kwargs is not None:
+            request_json["chat_template_kwargs"] = chat_template_kwargs
 
         for attempt in range(1, max_retries + 1):
             try:
@@ -204,12 +216,23 @@ class LLMClient:
                 response.raise_for_status()
 
                 data = response.json()
-                content = data["choices"][0]["message"]["content"]
+                choice = data["choices"][0]
+                content = choice["message"]["content"]
+                finish_reason = choice.get("finish_reason", "unknown")
+
+                if finish_reason == "length":
+                    logger.warning(
+                        "llm_output_truncated",
+                        prompt_length=len(prompt),
+                        response_length=len(content),
+                        max_tokens=request_json.get("max_tokens"),
+                    )
 
                 logger.debug(
                     "llm_generation_complete",
                     prompt_length=len(prompt),
                     response_length=len(content),
+                    finish_reason=finish_reason,
                 )
 
                 return content

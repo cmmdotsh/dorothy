@@ -62,7 +62,16 @@ SYNTHESIS_MAPPING = {
                     "source_slug": {"type": "keyword"},
                     "source_bias": {"type": "keyword"},
                     "source_region": {"type": "keyword"},
+                    "source_perspective": {"type": "keyword"},
                     "image_url": {"type": "keyword"},
+                },
+            },
+            "similarity_edges": {
+                "type": "nested",
+                "properties": {
+                    "source": {"type": "integer"},
+                    "target": {"type": "integer"},
+                    "similarity": {"type": "float"},
                 },
             },
         }
@@ -85,6 +94,7 @@ ARTICLE_MAPPING = {
             "source_slug": {"type": "keyword"},
             "source_bias": {"type": "keyword"},
             "source_region": {"type": "keyword"},
+            "source_perspective": {"type": "keyword"},
             "column": {"type": "keyword"},
             "headline": {
                 "type": "text",
@@ -446,6 +456,7 @@ class OpenSearchClient:
             "hero_image_source": synthesis.get("hero_image_source"),
             "articles": synthesis.get("articles", []),
             "article_urls": synthesis.get("article_urls", []),
+            "similarity_edges": synthesis.get("similarity_edges", []),
             "edition": synthesis.get("edition", 1),
             "is_current": synthesis.get("is_current", True),
             "superseded_by": synthesis.get("superseded_by"),
@@ -492,6 +503,7 @@ class OpenSearchClient:
                 "hero_image_source": synthesis.get("hero_image_source"),
                 "articles": synthesis.get("articles", []),
                 "article_urls": synthesis.get("article_urls", []),
+                "similarity_edges": synthesis.get("similarity_edges", []),
                 "edition": synthesis.get("edition", 1),
                 "is_current": synthesis.get("is_current", True),
                 "superseded_by": synthesis.get("superseded_by"),

@@ -2,16 +2,15 @@
 """
 Deduplicate syntheses in OpenSearch.
 
-Groups syntheses by headline similarity (Jaccard on words), keeps the best
+Groups syntheses by article URL overlap (Jaccard > 0.3), keeps the best
 version per group (highest article_count), marks the rest as historical.
 
 Usage:
     python -m scripts.dedup_syntheses              # Dry run (preview)
-    python -m scripts.dedup_syntheses --apply       # Actually delete duplicates
+    python -m scripts.dedup_syntheses --apply       # Mark duplicates as historical
 """
 
 import argparse
-import re
 from collections import defaultdict
 
 import structlog
@@ -35,34 +34,19 @@ console = Console()
 
 COLUMNS = ["politics", "tech", "money", "sports", "lifestyle"]
 
-# Words to ignore when computing headline similarity
-STOPWORDS = {
-    "a", "an", "the", "and", "or", "but", "in", "on", "at", "to", "for",
-    "of", "with", "by", "from", "as", "is", "was", "are", "were", "be",
-    "been", "being", "have", "has", "had", "do", "does", "did", "will",
-    "would", "could", "should", "may", "might", "shall", "can", "not",
-    "no", "nor", "so", "if", "then", "than", "that", "this", "it", "its",
-    "over", "after", "amid", "among", "about", "into", "up", "out",
-}
 
-
-def headline_words(headline: str) -> set[str]:
-    """Extract meaningful words from a headline."""
-    words = set(re.findall(r"[a-z]+", headline.lower()))
-    return words - STOPWORDS
-
-
-def jaccard(a: set, b: set) -> float:
-    """Jaccard similarity between two sets."""
-    if not a or not b:
+def url_jaccard(a: dict, b: dict) -> float:
+    """Jaccard similarity between two syntheses based on article URLs."""
+    urls_a = set(a.get("article_urls", []))
+    urls_b = set(b.get("article_urls", []))
+    if not urls_a or not urls_b:
         return 0.0
-    return len(a & b) / len(a | b)
+    return len(urls_a & urls_b) / len(urls_a | urls_b)
 
 
-def group_duplicates(syntheses: list[dict], threshold: float = 0.5) -> list[list[dict]]:
-    """Group syntheses by headline similarity using union-find."""
+def group_duplicates(syntheses: list[dict], threshold: float = 0.3) -> list[list[dict]]:
+    """Group syntheses by URL overlap using union-find."""
     n = len(syntheses)
-    word_sets = [headline_words(s.get("generated_headline", "")) for s in syntheses]
 
     # Union-find
     parent = list(range(n))
@@ -80,7 +64,7 @@ def group_duplicates(syntheses: list[dict], threshold: float = 0.5) -> list[list
 
     for i in range(n):
         for j in range(i + 1, n):
-            if jaccard(word_sets[i], word_sets[j]) >= threshold:
+            if url_jaccard(syntheses[i], syntheses[j]) > threshold:
                 union(i, j)
 
     # Group by root
@@ -92,17 +76,17 @@ def group_duplicates(syntheses: list[dict], threshold: float = 0.5) -> list[list
 
 
 def dedup_column(client: OpenSearchClient, column: str, apply: bool = False) -> tuple[int, int]:
-    """Deduplicate syntheses for a column. Returns (kept, removed)."""
+    """Deduplicate syntheses for a column. Returns (kept, marked_historical)."""
     syntheses = client.get_syntheses(column=column, limit=500)
 
     if not syntheses:
         return 0, 0
 
-    groups = group_duplicates(syntheses, threshold=0.5)
+    groups = group_duplicates(syntheses, threshold=0.3)
 
     kept = 0
     removed = 0
-    to_delete = []
+    to_mark = []
 
     for group in groups:
         if len(group) == 1:
@@ -115,7 +99,7 @@ def dedup_column(client: OpenSearchClient, column: str, apply: bool = False) -> 
         kept += 1
 
         for dup in group[1:]:
-            to_delete.append(dup)
+            to_mark.append((dup, best["story_id"]))
             removed += 1
 
         console.print(
@@ -124,28 +108,26 @@ def dedup_column(client: OpenSearchClient, column: str, apply: bool = False) -> 
             f"{best.get('generated_headline', '?')[:70]}"
         )
         for dup in group[1:]:
+            j = url_jaccard(best, dup)
             console.print(
-                f"  [red] DEL[/red] {dup['story_id']}: "
-                f"[{dup.get('article_count', 0)} articles] "
+                f"  [red] DUP[/red] {dup['story_id']}: "
+                f"[{dup.get('article_count', 0)} articles, J={j:.2f}] "
                 f"{dup.get('generated_headline', '?')[:70]}"
             )
         console.print()
 
-    if apply and to_delete:
-        for dup in to_delete:
+    if apply and to_mark:
+        for dup, best_id in to_mark:
             story_id = dup.get("story_id")
             if story_id:
-                try:
-                    client.client.delete(index="dorothy-synthesis", id=story_id)
-                except Exception as e:
-                    console.print(f"  [red]Failed to delete {story_id}: {e}[/red]")
+                client.mark_synthesis_historical(story_id, best_id)
 
     return kept, removed
 
 
 def main():
     parser = argparse.ArgumentParser(description="Deduplicate Dorothy syntheses")
-    parser.add_argument("--apply", action="store_true", help="Actually delete duplicates")
+    parser.add_argument("--apply", action="store_true", help="Mark duplicates as historical")
     parser.add_argument("--column", type=str, help="Only dedup a specific column")
     args = parser.parse_args()
 
@@ -160,7 +142,7 @@ def main():
     table = Table(title="Dedup Results")
     table.add_column("Column")
     table.add_column("Kept", justify="right")
-    table.add_column("Removed", justify="right")
+    table.add_column("Historical", justify="right")
 
     total_kept = 0
     total_removed = 0
@@ -180,7 +162,7 @@ def main():
     console.print(table)
 
     if not args.apply:
-        console.print("\n[yellow]Dry run — no changes made. Use --apply to delete duplicates.[/yellow]")
+        console.print("\n[yellow]Dry run — no changes made. Use --apply to mark duplicates as historical.[/yellow]")
 
 
 if __name__ == "__main__":

@@ -138,6 +138,7 @@ class RSSFetcher:
             source_slug=source.slug,
             source_bias=source.bias,
             source_region=source.region,
+            source_perspective=source.perspective,
             column=source.column,
             headline=headline[:500],
             summary=summary[:2000] if summary else None,
@@ -181,35 +182,61 @@ class RSSFetcher:
         clean = re.sub(r"\s+", " ", clean)
         return clean.strip()
 
-    def _extract_image(self, entry: feedparser.FeedParserDict) -> Optional[str]:
-        """Extract image URL from RSS entry."""
-        # Try media:thumbnail first (BBC, etc)
-        if hasattr(entry, "media_thumbnail") and entry.media_thumbnail:
-            url = entry.media_thumbnail[0].get("url")
-            if url:
-                return url
+    MIN_IMAGE_WIDTH = 400
 
-        # Try media:content (Guardian, Fox, etc)
+    def _is_image_large_enough(self, media: dict) -> bool:
+        """Check if an image meets minimum resolution using RSS metadata."""
+        try:
+            width = int(media.get("width", 0))
+            if width and width < self.MIN_IMAGE_WIDTH:
+                return False
+        except (ValueError, TypeError):
+            pass
+        return True
+
+    def _extract_image(self, entry: feedparser.FeedParserDict) -> Optional[str]:
+        """Extract best image URL from RSS entry, preferring full-size images."""
+        candidates: list[tuple[str, int]] = []  # (url, priority) lower = better
+
+        # media:content — usually full-resolution (Guardian, Fox, etc)
         if hasattr(entry, "media_content") and entry.media_content:
             for media in entry.media_content:
-                # Prefer ones with explicit image type
-                if media.get("medium") == "image" or media.get("type", "").startswith(
-                    "image/"
-                ):
-                    return media.get("url")
-            # Fallback: take first media_content with a URL (Guardian doesn't set type)
+                is_image = (
+                    media.get("medium") == "image"
+                    or media.get("type", "").startswith("image/")
+                )
+                url = media.get("url", "")
+                if url and is_image and self._is_image_large_enough(media):
+                    candidates.append((url, 0))
+                elif url and is_image:
+                    candidates.append((url, 2))
+            # Fallback: media_content without explicit type (Guardian)
             for media in entry.media_content:
                 url = media.get("url", "")
-                if url:
-                    return url
+                if url and self._is_image_large_enough(media):
+                    candidates.append((url, 1))
 
-        # Try enclosures (standard RSS)
+        # media:thumbnail — often small; use only if nothing better
+        if hasattr(entry, "media_thumbnail") and entry.media_thumbnail:
+            for thumb in entry.media_thumbnail:
+                url = thumb.get("url", "")
+                if url and self._is_image_large_enough(thumb):
+                    candidates.append((url, 3))
+
+        # Enclosures (standard RSS)
         if hasattr(entry, "enclosures") and entry.enclosures:
             for enc in entry.enclosures:
                 if enc.get("type", "").startswith("image/"):
-                    return enc.get("url")
+                    url = enc.get("url", "")
+                    if url:
+                        candidates.append((url, 4))
 
-        return None
+        if not candidates:
+            return None
+
+        # Return highest-priority (lowest number) candidate
+        candidates.sort(key=lambda c: c[1])
+        return candidates[0][0]
 
 
 def fetch_all_sources(sources: list[Source]) -> Iterator[Article]:
