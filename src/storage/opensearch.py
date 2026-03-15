@@ -577,8 +577,11 @@ class OpenSearchClient:
                                 "double articles = doc['article_count'].size() > 0 ? doc['article_count'].value : 1;"
                                 "double sources = doc['source_count'].size() > 0 ? doc['source_count'].value : 1;"
                                 "double diversity = 1.0 + 0.1 * Math.max(0, sources - 1);"
-                                "if (doc['median_pub_date'].size() == 0) { return articles * diversity; }"
-                                "double ageHours = (new Date().getTime() - doc['median_pub_date'].value.toInstant().toEpochMilli()) / 3600000.0;"
+                                "long ts;"
+                                "if (doc['median_pub_date'].size() > 0) { ts = doc['median_pub_date'].value.toInstant().toEpochMilli(); }"
+                                "else if (doc['generated_at'].size() > 0) { ts = doc['generated_at'].value.toInstant().toEpochMilli(); }"
+                                "else { return 0.01; }"
+                                "double ageHours = (new Date().getTime() - ts) / 3600000.0;"
                                 "ageHours = Math.max(1.0, ageHours);"
                                 "return (articles / ageHours) * diversity;"
                             ),

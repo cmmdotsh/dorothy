@@ -164,6 +164,39 @@ def _parse_llm_json(raw: str) -> dict:
         return json.loads(fixed)
 
 
+# Minimum word counts to consider LLM output substantive
+_MIN_HEADLINE_WORDS = 3
+_MIN_ARTICLE_WORDS = 30
+_MIN_ANALYSIS_WORDS = 20
+
+
+def _ensure_str(value: object) -> str:
+    """Coerce an LLM JSON value to a flat string.
+
+    Models sometimes return a nested dict or list instead of a plain string
+    for a field. Flatten it so downstream code always gets str.
+    """
+    if isinstance(value, str):
+        return value
+    if isinstance(value, dict):
+        # Join all string values (ignore keys)
+        parts = [_ensure_str(v) for v in value.values()]
+        return "\n\n".join(p for p in parts if p)
+    if isinstance(value, list):
+        parts = [_ensure_str(v) for v in value]
+        return "\n\n".join(p for p in parts if p)
+    return str(value) if value is not None else ""
+
+
+def _is_degenerate(text: str, min_words: int) -> bool:
+    """Check if LLM output is degenerate (empty, ellipsis, punctuation-only, etc.)."""
+    # Strip punctuation and whitespace
+    stripped = re.sub(r'[^\w\s]', '', text).strip()
+    if not stripped:
+        return True
+    return len(stripped.split()) < min_words
+
+
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -697,21 +730,45 @@ class StorySummarizer:
                 "included or omitted by different sources.\n"
             )
 
+        max_retries = 10
+
         try:
-            # Pass 1: Generate neutral article
+            # Pass 1: Generate neutral article (with retry on degenerate output)
             article_prompt = (
                 "Below are news reports covering the same story from multiple outlets.\n\n"
                 f"{articles_text}\n\n"
                 "Write a comprehensive news article based on these sources.\n"
                 'Respond with a JSON object containing "headline" and "article" keys.'
             )
-            article_response = self.llm.generate(
-                article_prompt, system_prompt=article_sys,
-                skip_thinking=True,
-            )
-            parsed = _parse_llm_json(article_response)
-            headline = parsed["headline"].strip()
-            article = parsed["article"].strip()
+
+            headline = None
+            article = None
+            for attempt in range(1, max_retries + 1):
+                article_response = self.llm.generate(
+                    article_prompt, system_prompt=article_sys,
+                    skip_thinking=True,
+                )
+                parsed = _parse_llm_json(article_response)
+                headline = _ensure_str(parsed["headline"]).strip()
+                article = _ensure_str(parsed["article"]).strip()
+
+                if _is_degenerate(headline, _MIN_HEADLINE_WORDS) or _is_degenerate(article, _MIN_ARTICLE_WORDS):
+                    logger.warning(
+                        "degenerate_article_output",
+                        story_id=story.id,
+                        attempt=attempt,
+                        headline=headline[:80],
+                        article_preview=article[:80],
+                    )
+                    if attempt == max_retries:
+                        logger.error(
+                            "article_generation_failed_all_retries",
+                            story_id=story.id,
+                            retries=max_retries,
+                        )
+                        return None
+                    continue
+                break
 
             logger.info(
                 "article_generated",
@@ -719,7 +776,7 @@ class StorySummarizer:
                 headline=headline[:80],
             )
 
-            # Pass 2: Generate coverage analysis (with article as context)
+            # Pass 2: Generate coverage analysis (with retry on degenerate output)
             analysis_prompt = (
                 "Here is a neutral article we produced from multiple sources:\n\n"
                 "---\n"
@@ -754,13 +811,32 @@ class StorySummarizer:
                     'Respond with a JSON object containing an "analysis" key.'
                 )
 
-            analysis_response = self.llm.generate(
-                analysis_prompt, system_prompt=analysis_sys,
-                max_tokens=6144,
-                skip_thinking=True,
-            )
-            parsed_analysis = _parse_llm_json(analysis_response)
-            analysis = parsed_analysis["analysis"].strip()
+            analysis = None
+            for attempt in range(1, max_retries + 1):
+                analysis_response = self.llm.generate(
+                    analysis_prompt, system_prompt=analysis_sys,
+                    max_tokens=6144,
+                    skip_thinking=True,
+                )
+                parsed_analysis = _parse_llm_json(analysis_response)
+                analysis = _ensure_str(parsed_analysis["analysis"]).strip()
+
+                if _is_degenerate(analysis, _MIN_ANALYSIS_WORDS):
+                    logger.warning(
+                        "degenerate_analysis_output",
+                        story_id=story.id,
+                        attempt=attempt,
+                        analysis_preview=analysis[:80],
+                    )
+                    if attempt == max_retries:
+                        logger.error(
+                            "analysis_generation_failed_all_retries",
+                            story_id=story.id,
+                            retries=max_retries,
+                        )
+                        return None
+                    continue
+                break
 
             logger.info(
                 "analysis_generated",
@@ -806,7 +882,7 @@ class StorySummarizer:
 
             return result
 
-        except (LLMError, json.JSONDecodeError, KeyError) as e:
+        except (LLMError, json.JSONDecodeError, KeyError, AttributeError, TypeError) as e:
             logger.error("synthesis_failed", story_id=story.id, error=str(e))
             return None
 
