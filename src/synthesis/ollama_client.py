@@ -1,4 +1,4 @@
-"""LLM client for story synthesis via Ollama."""
+"""Ollama inference client for story synthesis and article review."""
 
 import time
 from typing import Optional
@@ -9,28 +9,29 @@ import structlog
 logger = structlog.get_logger(__name__)
 
 
-class LLMError(Exception):
-    """Error communicating with LLM."""
+class OllamaError(Exception):
+    """Error communicating with Ollama."""
 
     pass
 
 
 # Conservative chars-per-token ratio for estimation.
-# English text averages ~4 chars/token; we use 3.5 for safety margin.
 CHARS_PER_TOKEN = 3.5
 
 
-class LLMClient:
+class OllamaClient:
     """
     Client for generating text via Ollama's OpenAI-compatible API.
 
-    Used for the primary synthesis pass (article generation + coverage analysis).
+    Unlike LMStudio, Ollama manages model lifecycle automatically —
+    no explicit load/unload needed. Models are loaded on first request
+    and kept in memory based on OLLAMA_KEEP_ALIVE.
     """
 
     def __init__(
         self,
         base_url: str = "http://192.168.0.149:11434",
-        model: str = "qwen3.5:27b",
+        model: str = "gemma4:31b",
         temperature: float = 0.3,
         max_tokens: int = 4096,
         context_length: int = 32768,
@@ -65,25 +66,14 @@ class LLMClient:
         temperature: Optional[float] = None,
         max_tokens: Optional[int] = None,
         response_format: Optional[dict] = None,
-        chat_template_kwargs: Optional[dict] = None,
-        skip_thinking: bool = False,
     ) -> str:
-        """Generate text completion.
-
-        Args:
-            skip_thinking: If True, prepend an assistant message with an empty
-                <think></think> block to prevent models from entering thinking
-                mode.
-        """
+        """Generate text completion via Ollama's OpenAI-compatible API."""
         messages = []
 
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
 
         messages.append({"role": "user", "content": prompt})
-
-        if skip_thinking:
-            messages.append({"role": "assistant", "content": "<think>\n</think>\n"})
 
         max_retries = 3
         request_json = {
@@ -107,14 +97,15 @@ class LLMClient:
 
                 if finish_reason == "length":
                     logger.warning(
-                        "llm_output_truncated",
+                        "ollama_output_truncated",
                         prompt_length=len(prompt),
                         response_length=len(content),
                         max_tokens=request_json.get("max_tokens"),
                     )
 
                 logger.debug(
-                    "llm_generation_complete",
+                    "ollama_generation_complete",
+                    model=self.model,
                     prompt_length=len(prompt),
                     response_length=len(content),
                     finish_reason=finish_reason,
@@ -132,7 +123,7 @@ class LLMClient:
                 if attempt < max_retries:
                     delay = 10 * attempt
                     logger.warning(
-                        "llm_retrying",
+                        "ollama_retrying",
                         attempt=attempt,
                         max_retries=max_retries,
                         delay=delay,
@@ -143,18 +134,18 @@ class LLMClient:
                     continue
 
                 logger.error(
-                    "llm_api_error",
+                    "ollama_api_error",
                     status=e.response.status_code,
                     error=str(e),
                     response_body=body,
                 )
-                raise LLMError(f"API error: {e.response.status_code} — {body}") from e
+                raise OllamaError(f"API error: {e.response.status_code} — {body}") from e
 
             except httpx.RequestError as e:
                 if attempt < max_retries:
                     delay = 10 * attempt
                     logger.warning(
-                        "llm_retrying",
+                        "ollama_retrying",
                         attempt=attempt,
                         max_retries=max_retries,
                         delay=delay,
@@ -163,42 +154,39 @@ class LLMClient:
                     time.sleep(delay)
                     continue
 
-                logger.error("llm_request_error", error=str(e))
-                raise LLMError(f"Request failed: {e}") from e
+                logger.error("ollama_request_error", error=str(e))
+                raise OllamaError(f"Request failed: {e}") from e
 
             except (KeyError, TypeError, IndexError) as e:
-                logger.error("llm_parse_error", error=str(e))
-                raise LLMError(f"Failed to parse response: {e}") from e
-
-    def get_max_context_length(self) -> int:
-        """Get the configured context length."""
-        return self.context_length
+                logger.error("ollama_parse_error", error=str(e))
+                raise OllamaError(f"Failed to parse response: {e}") from e
 
     def get_prompt_token_budget(self) -> int:
         """Get the max tokens available for the prompt.
 
         Reserves space for the completion (max_tokens) plus a safety margin.
         """
-        context_length = self.get_max_context_length()
-        safety_margin = int(context_length * 0.10)
-        return context_length - self.max_tokens - safety_margin
+        safety_margin = int(self.context_length * 0.10)
+        return self.context_length - self.max_tokens - safety_margin
 
     @staticmethod
     def estimate_tokens(text: str) -> int:
-        """Estimate token count for a string.
-
-        Uses a conservative chars-per-token ratio. Not exact, but sufficient
-        for budget decisions ("does this fit or do we need to sample?").
-        """
+        """Estimate token count for a string."""
         return int(len(text) / CHARS_PER_TOKEN)
 
     def health_check(self) -> bool:
-        """Check if the LLM service is reachable."""
+        """Check if Ollama is reachable and has models available."""
         try:
-            result = self.generate("Say 'ok' if you can read this.", max_tokens=10, skip_thinking=True)
-            if result:
-                logger.info("llm_service_healthy", model=self.model)
-                return True
-            return False
-        except LLMError:
+            response = self.client.get(f"{self.base_url}/api/tags")
+            response.raise_for_status()
+            data = response.json()
+            models = [m["name"] for m in data.get("models", [])]
+            logger.info(
+                "ollama_healthy",
+                base_url=self.base_url,
+                models_available=len(models),
+            )
+            return True
+        except Exception as e:
+            logger.error("ollama_health_check_failed", error=str(e))
             return False

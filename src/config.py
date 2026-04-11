@@ -43,10 +43,10 @@ class SchedulerSettings(BaseSettings):
 
 
 class EmbeddingSettings(BaseSettings):
-    """Embedding service settings."""
+    """Embedding service settings (via Ollama)."""
 
-    base_url: str = "http://192.168.0.149:1234"
-    model: str = "text-embedding-mxbai-embed-large-v1"
+    base_url: str = "http://192.168.0.149:11434"
+    model: str = "mxbai-embed-large"
     batch_size: int = 32
     enabled: bool = True
 
@@ -55,16 +55,29 @@ class EmbeddingSettings(BaseSettings):
 
 
 class LLMSettings(BaseSettings):
-    """LLM service settings for story synthesis."""
+    """LLM service settings for story synthesis (via Ollama)."""
 
-    base_url: str = "http://192.168.0.149:1234"
-    model: str = "mlx-community/qwen3.5-35b-a3b"
+    base_url: str = "http://192.168.0.149:11434"
+    model: str = "qwen3.5:27b"
     temperature: float = 0.3
-    max_tokens: int = 1500
+    max_tokens: int = 4096
     context_length: int = 32768
 
     class Config:
         env_prefix = "LLM_"
+
+
+class ReviewerSettings(BaseSettings):
+    """Quality reviewer settings (via Ollama, separate model)."""
+
+    base_url: str = "http://192.168.0.149:11434"
+    model: str = "gemma4:31b"
+    temperature: float = 0.3
+    max_tokens: int = 4096
+    enabled: bool = True
+
+    class Config:
+        env_prefix = "REVIEWER_"
 
 
 class PodcastSettings(BaseSettings):
@@ -97,6 +110,7 @@ class DorothyConfig:
         self.scheduler = SchedulerSettings()
         self.embedding = EmbeddingSettings()
         self.llm = LLMSettings()
+        self.reviewer = ReviewerSettings()
         self.podcast = PodcastSettings()
         self._sources: list[Source] = []
 

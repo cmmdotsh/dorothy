@@ -74,6 +74,16 @@ SYNTHESIS_MAPPING = {
                     "similarity": {"type": "float"},
                 },
             },
+            "quality_scores": {
+                "type": "object",
+                "properties": {
+                    "factuality": {"type": "float"},
+                    "neutrality": {"type": "float"},
+                    "completeness": {"type": "float"},
+                    "structure": {"type": "float"},
+                },
+            },
+            "review_improvements": {"type": "keyword"},
         }
     },
 }

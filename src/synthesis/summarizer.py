@@ -13,7 +13,9 @@ from sklearn.metrics.pairwise import cosine_distances
 import structlog
 
 from src.clustering import Story
+from src.synthesis.json_utils import extract_json, parse_llm_json, ensure_str, is_degenerate
 from src.synthesis.llm_client import LLMClient, LLMError
+from src.synthesis.reviewer import ArticleReviewer
 
 logger = structlog.get_logger(__name__)
 
@@ -126,42 +128,8 @@ Guidelines:
 - Respond in JSON with an "analysis" field"""
 
 
-def _extract_json(raw: str) -> str:
-    """Extract JSON object from LLM response that may contain extra text.
-
-    Models sometimes wrap JSON in markdown fences, think blocks, or preamble.
-    """
-    # Strip markdown code fences
-    cleaned = re.sub(r"```(?:json)?\s*", "", raw).strip().rstrip("`")
-    # Strip <think>...</think> blocks (Qwen thinking mode), including unclosed blocks
-    cleaned = re.sub(r"<think>.*?</think>\s*", "", cleaned, flags=re.DOTALL).strip()
-    cleaned = re.sub(r"<think>.*", "", cleaned, flags=re.DOTALL).strip()
-    # Find the first { ... last }
-    start = cleaned.find("{")
-    end = cleaned.rfind("}")
-    if start != -1 and end != -1 and end > start:
-        return cleaned[start : end + 1]
-    return cleaned
-
-
-def _parse_llm_json(raw: str) -> dict:
-    """Parse JSON from LLM response, handling common model quirks.
-
-    1. Strips markdown fences, think blocks, and preamble text
-    2. Fixes unescaped newlines inside JSON string values
-    """
-    extracted = _extract_json(raw)
-    try:
-        return json.loads(extracted)
-    except json.JSONDecodeError:
-        # Escape literal newlines/carriage-returns inside quoted string values
-        fixed = re.sub(
-            r'"((?:[^"\\]|\\.)*)"',
-            lambda m: '"' + m.group(1).replace("\r", "\\r").replace("\n", "\\n") + '"',
-            extracted,
-            flags=re.DOTALL,
-        )
-        return json.loads(fixed)
+_extract_json = extract_json
+_parse_llm_json = parse_llm_json
 
 
 # Minimum word counts to consider LLM output substantive
@@ -170,31 +138,8 @@ _MIN_ARTICLE_WORDS = 30
 _MIN_ANALYSIS_WORDS = 20
 
 
-def _ensure_str(value: object) -> str:
-    """Coerce an LLM JSON value to a flat string.
-
-    Models sometimes return a nested dict or list instead of a plain string
-    for a field. Flatten it so downstream code always gets str.
-    """
-    if isinstance(value, str):
-        return value
-    if isinstance(value, dict):
-        # Join all string values (ignore keys)
-        parts = [_ensure_str(v) for v in value.values()]
-        return "\n\n".join(p for p in parts if p)
-    if isinstance(value, list):
-        parts = [_ensure_str(v) for v in value]
-        return "\n\n".join(p for p in parts if p)
-    return str(value) if value is not None else ""
-
-
-def _is_degenerate(text: str, min_words: int) -> bool:
-    """Check if LLM output is degenerate (empty, ellipsis, punctuation-only, etc.)."""
-    # Strip punctuation and whitespace
-    stripped = re.sub(r'[^\w\s]', '', text).strip()
-    if not stripped:
-        return True
-    return len(stripped.split()) < min_words
+_ensure_str = ensure_str
+_is_degenerate = is_degenerate
 
 
 def _utcnow() -> datetime:
@@ -225,6 +170,8 @@ class SynthesizedStory:
     median_pub_date: Optional[str] = None
     first_pub_date: Optional[str] = None
     last_pub_date: Optional[str] = None
+    quality_scores: Optional[dict[str, float]] = None
+    review_improvements: Optional[list[str]] = None
 
     @property
     def summary(self) -> str:
@@ -254,6 +201,8 @@ class SynthesizedStory:
             "median_pub_date": self.median_pub_date,
             "first_pub_date": self.first_pub_date,
             "last_pub_date": self.last_pub_date,
+            "quality_scores": self.quality_scores,
+            "review_improvements": self.review_improvements,
         }
 
     def to_markdown(self) -> str:
@@ -343,8 +292,10 @@ class StorySummarizer:
     def __init__(
         self,
         llm_client: LLMClient,
+        reviewer: Optional[ArticleReviewer] = None,
     ):
         self.llm = llm_client
+        self.reviewer = reviewer
         self._token_budget: Optional[int] = None
 
     @property
@@ -843,6 +794,41 @@ class StorySummarizer:
                 story_id=story.id,
             )
 
+            # Pass 3 (optional): Article quality review via separate model
+            quality_scores = None
+            review_improvements = None
+            if self.reviewer:
+                try:
+                    review_result = self.reviewer.review_and_improve(
+                        headline=headline,
+                        article=article,
+                        source_articles_text=articles_text,
+                        column=self._story_column(story),
+                    )
+                    quality_scores = review_result.quality_scores
+                    review_improvements = review_result.improvements_made or None
+                    if review_result.was_improved:
+                        headline = review_result.improved_headline
+                        article = review_result.improved_article
+                        logger.info(
+                            "article_improved_by_review",
+                            story_id=story.id,
+                            scores=review_result.quality_scores,
+                            improvements=review_result.improvements_made,
+                        )
+                    else:
+                        logger.info(
+                            "article_passed_review",
+                            story_id=story.id,
+                            scores=review_result.quality_scores,
+                        )
+                except Exception as e:
+                    logger.warning(
+                        "review_pass_failed",
+                        story_id=story.id,
+                        error=str(e),
+                    )
+
             sources_used = list(set(a.get("source_slug", "") for a in story.articles))
             similarity_edges = self._compute_similarity_edges(story.articles)
             article_refs = self._build_article_refs(story.articles)
@@ -871,6 +857,8 @@ class StorySummarizer:
                 median_pub_date=timing.median_pub_date,
                 first_pub_date=timing.first_pub_date,
                 last_pub_date=timing.last_pub_date,
+                quality_scores=quality_scores,
+                review_improvements=review_improvements,
             )
 
             logger.info(

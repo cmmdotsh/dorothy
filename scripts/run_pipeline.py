@@ -28,6 +28,8 @@ from src.models import Article
 from src.storage import OpenSearchClient
 from src.clustering import StoryGrouper
 from src.synthesis import LLMClient, StorySummarizer
+from src.synthesis.ollama_client import OllamaClient
+from src.synthesis.reviewer import ArticleReviewer
 from src.synthesis.summarizer import compute_story_timing
 from src.embeddings import EmbeddingClient
 from src.embeddings.generator import generate_embeddings
@@ -119,6 +121,7 @@ def run_synthesis(
     column: str,
     edition: int = 1,
     limit: Optional[int] = None,
+    reviewer: Optional[ArticleReviewer] = None,
 ) -> int:
     """Synthesize stories for a column with deduplication. Returns count of stories synthesized."""
     try:
@@ -135,7 +138,7 @@ def run_synthesis(
         if not multi_source:
             return 0
 
-        summarizer = StorySummarizer(llm_client)
+        summarizer = StorySummarizer(llm_client, reviewer=reviewer)
         results = []
         skipped = 0
         # Track URLs of stories synthesized in this batch for intra-batch dedup
@@ -297,6 +300,7 @@ def run_pipeline_cycle(
     llm_client: LLMClient,
     stories_per_column: Optional[int] = None,
     render_and_deploy: bool = False,
+    reviewer: Optional[ArticleReviewer] = None,
 ) -> dict:
     """Run a full pipeline cycle: fetch → synthesize all columns."""
     start_time = datetime.now(timezone.utc)
@@ -337,7 +341,7 @@ def run_pipeline_cycle(
     for column in COLUMNS:
         console.print(f"  [dim]{column}...[/dim]", end=" ")
         try:
-            count = run_synthesis(os_client, llm_client, column, edition=edition, limit=stories_per_column)
+            count = run_synthesis(os_client, llm_client, column, edition=edition, limit=stories_per_column, reviewer=reviewer)
             synthesis_counts[column] = count
             console.print(f"[green]{count} stories[/green]")
         except Exception as e:
@@ -410,16 +414,31 @@ def daemon_mode(interval_minutes: int, stories_per_column: int, render_and_deplo
         console.print(f"[red]LLM unavailable at {config.llm.base_url}[/red]")
         sys.exit(1)
 
+    # Set up article reviewer if enabled
+    reviewer = None
+    if config.reviewer.enabled:
+        reviewer_client = OllamaClient(
+            base_url=config.reviewer.base_url,
+            model=config.reviewer.model,
+            temperature=config.reviewer.temperature,
+            max_tokens=config.reviewer.max_tokens,
+        )
+        if reviewer_client.health_check():
+            reviewer = ArticleReviewer(reviewer_client)
+            console.print(f"[dim]Reviewer: {config.reviewer.model} @ {config.reviewer.base_url}[/dim]")
+        else:
+            console.print(f"[yellow]Reviewer unavailable at {config.reviewer.base_url}, skipping review pass[/yellow]")
+
     console.print(f"[dim]OpenSearch: {config.opensearch.host}:{config.opensearch.port}[/dim]")
     console.print(f"[dim]LLM: {config.llm.model} @ {config.llm.base_url}[/dim]")
     console.print()
 
     # Run immediately
-    run_pipeline_cycle(os_client, llm_client, stories_per_column, render_and_deploy)
+    run_pipeline_cycle(os_client, llm_client, stories_per_column, render_and_deploy, reviewer=reviewer)
 
     # Schedule future runs
     def scheduled_run():
-        run_pipeline_cycle(os_client, llm_client, stories_per_column, render_and_deploy)
+        run_pipeline_cycle(os_client, llm_client, stories_per_column, render_and_deploy, reviewer=reviewer)
 
     # Schedule on the hour if interval is a whole number of hours
     if interval_minutes == 60:
@@ -435,6 +454,8 @@ def daemon_mode(interval_minutes: int, stories_per_column: int, render_and_deplo
     def shutdown_handler(signum, frame):
         console.print("\n[yellow]Shutting down...[/yellow]")
         llm_client.close()
+        if reviewer and reviewer.llm:
+            reviewer.llm.close()
         sys.exit(0)
 
     signal.signal(signal.SIGINT, shutdown_handler)
@@ -498,10 +519,28 @@ def main() -> None:
             context_length=config.llm.context_length,
         )
 
+        # Set up article reviewer if enabled
+        reviewer = None
+        reviewer_client = None
+        if config.reviewer.enabled:
+            reviewer_client = OllamaClient(
+                base_url=config.reviewer.base_url,
+                model=config.reviewer.model,
+                temperature=config.reviewer.temperature,
+                max_tokens=config.reviewer.max_tokens,
+            )
+            if reviewer_client.health_check():
+                reviewer = ArticleReviewer(reviewer_client)
+                console.print(f"[dim]Reviewer: {config.reviewer.model} @ {config.reviewer.base_url}[/dim]")
+            else:
+                console.print(f"[yellow]Reviewer unavailable, skipping review pass[/yellow]")
+
         try:
-            run_pipeline_cycle(os_client, llm_client, args.stories, args.publish)
+            run_pipeline_cycle(os_client, llm_client, args.stories, args.publish, reviewer=reviewer)
         finally:
             llm_client.close()
+            if reviewer_client:
+                reviewer_client.close()
     else:
         daemon_mode(args.interval, args.stories, args.publish)
 
