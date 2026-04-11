@@ -340,7 +340,7 @@ class LLMClient:
                 logger.error("health_check_model_load_failed", model=self.model)
                 return False
 
-            result = self.generate("Say 'ok' if you can read this.", max_tokens=10)
+            result = self.generate("Say 'ok' if you can read this.", max_tokens=10, skip_thinking=True)
             if result:
                 logger.info("llm_service_healthy", model=self.model)
                 return True
