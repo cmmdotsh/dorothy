@@ -15,7 +15,6 @@ import structlog
 from src.clustering import Story
 from src.synthesis.json_utils import extract_json, parse_llm_json, ensure_str, is_degenerate
 from src.synthesis.llm_client import LLMClient, LLMError
-from src.synthesis.reviewer import ArticleReviewer
 
 logger = structlog.get_logger(__name__)
 
@@ -292,10 +291,8 @@ class StorySummarizer:
     def __init__(
         self,
         llm_client: LLMClient,
-        reviewer: Optional[ArticleReviewer] = None,
     ):
         self.llm = llm_client
-        self.reviewer = reviewer
         self._token_budget: Optional[int] = None
 
     @property
@@ -794,41 +791,6 @@ class StorySummarizer:
                 story_id=story.id,
             )
 
-            # Pass 3 (optional): Article quality review via separate model
-            quality_scores = None
-            review_improvements = None
-            if self.reviewer:
-                try:
-                    review_result = self.reviewer.review_and_improve(
-                        headline=headline,
-                        article=article,
-                        source_articles_text=articles_text,
-                        column=self._story_column(story),
-                    )
-                    quality_scores = review_result.quality_scores
-                    review_improvements = review_result.improvements_made or None
-                    if review_result.was_improved:
-                        headline = review_result.improved_headline
-                        article = review_result.improved_article
-                        logger.info(
-                            "article_improved_by_review",
-                            story_id=story.id,
-                            scores=review_result.quality_scores,
-                            improvements=review_result.improvements_made,
-                        )
-                    else:
-                        logger.info(
-                            "article_passed_review",
-                            story_id=story.id,
-                            scores=review_result.quality_scores,
-                        )
-                except Exception as e:
-                    logger.warning(
-                        "review_pass_failed",
-                        story_id=story.id,
-                        error=str(e),
-                    )
-
             sources_used = list(set(a.get("source_slug", "") for a in story.articles))
             similarity_edges = self._compute_similarity_edges(story.articles)
             article_refs = self._build_article_refs(story.articles)
@@ -857,8 +819,8 @@ class StorySummarizer:
                 median_pub_date=timing.median_pub_date,
                 first_pub_date=timing.first_pub_date,
                 last_pub_date=timing.last_pub_date,
-                quality_scores=quality_scores,
-                review_improvements=review_improvements,
+                quality_scores=None,
+                review_improvements=None,
             )
 
             logger.info(
