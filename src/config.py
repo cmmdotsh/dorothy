@@ -92,6 +92,20 @@ class ExtractorSettings(BaseSettings):
         env_prefix = "EXTRACTOR_"
 
 
+class ClaimGraphSettings(BaseSettings):
+    """Claim graph analysis settings."""
+
+    enabled: bool = True
+    similarity_threshold: float = 0.85
+    min_sources_corroborated: int = 2
+    embedding_concurrency: int = 8
+    min_chunk_chars: int = 80
+    max_chunk_chars: int = 800
+
+    class Config:
+        env_prefix = "CLAIM_GRAPH_"
+
+
 class PodcastSettings(BaseSettings):
     """Podcast generation settings."""
 
@@ -124,6 +138,7 @@ class DorothyConfig:
         self.llm = LLMSettings()
         self.reviewer = ReviewerSettings()
         self.extractor = ExtractorSettings()
+        self.claim_graph = ClaimGraphSettings()
         self.podcast = PodcastSettings()
         self._sources: list[Source] = []
 

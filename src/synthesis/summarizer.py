@@ -12,6 +12,7 @@ from dateutil import parser as dateutil_parser
 from sklearn.metrics.pairwise import cosine_distances
 import structlog
 
+from src.claim_graph.models import ClaimGraph
 from src.clustering import Story
 from src.synthesis.json_utils import extract_json, parse_llm_json, ensure_str, is_degenerate
 from src.synthesis.llm_client import LLMClient, LLMError
@@ -631,16 +632,23 @@ class StorySummarizer:
             for a in articles
         ]
 
-    def synthesize(self, story: Story) -> Optional[SynthesizedStory]:
+    def synthesize(
+        self,
+        story: Story,
+        claim_graph: Optional[ClaimGraph] = None,
+    ) -> Optional[SynthesizedStory]:
         """
         Generate a neutral article and coverage analysis for a story.
 
         Pass 1: Generate a neutral news article from all sources.
+                If a claim_graph is provided, uses structured fact alignment
+                instead of raw article text.
         Pass 2: Analyze how different outlets covered the story differently,
                 using the generated article as context.
 
         Args:
             story: Story object with articles from multiple sources
+            claim_graph: Optional pre-built claim graph for structured input
 
         Returns:
             SynthesizedStory with article and analysis, or None on error
@@ -688,12 +696,26 @@ class StorySummarizer:
 
         try:
             # Pass 1: Generate neutral article (with retry on degenerate output)
-            article_prompt = (
-                "Below are news reports covering the same story from multiple outlets.\n\n"
-                f"{articles_text}\n\n"
-                "Write a comprehensive news article based on these sources.\n"
-                'Respond with a JSON object containing "headline" and "article" keys.'
-            )
+            if claim_graph and (claim_graph.corroborated or claim_graph.unique_details):
+                column = self._story_column(story)
+                graph_text = claim_graph.to_prompt_text(column)
+                article_prompt = (
+                    "Below is a structured analysis of news reports covering the same story "
+                    "from multiple outlets. Facts corroborated across sources are grouped together, "
+                    "and unique details reported by only one source are listed separately.\n\n"
+                    f"{graph_text}\n\n"
+                    "Write a comprehensive news article based on this analysis. Prioritize "
+                    "corroborated facts, note where sources diverge, and include unique details "
+                    "with appropriate attribution.\n"
+                    'Respond with a JSON object containing "headline" and "article" keys.'
+                )
+            else:
+                article_prompt = (
+                    "Below are news reports covering the same story from multiple outlets.\n\n"
+                    f"{articles_text}\n\n"
+                    "Write a comprehensive news article based on these sources.\n"
+                    'Respond with a JSON object containing "headline" and "article" keys.'
+                )
 
             headline = None
             article = None

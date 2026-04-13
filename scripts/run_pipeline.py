@@ -34,6 +34,7 @@ from src.synthesis.reviewer import ArticleReviewer
 from src.synthesis.summarizer import compute_story_timing
 from src.embeddings import EmbeddingClient
 from src.embeddings.generator import generate_embeddings
+from src.claim_graph import ClaimGraphBuilder
 from src.fetcher.extractor import ArticleExtractor
 from scripts.render_static import StaticSiteGenerator
 
@@ -146,6 +147,7 @@ def run_synthesis(
     edition: int = 1,
     limit: Optional[int] = None,
     reviewer: Optional[ArticleReviewer] = None,
+    graph_builder: Optional[ClaimGraphBuilder] = None,
 ) -> int:
     """Synthesize stories for a column with deduplication. Returns count of stories synthesized."""
     try:
@@ -234,7 +236,19 @@ def run_synthesis(
                                 existing["story_id"], story.id
                             )
 
-                synthesized = summarizer.synthesize(story)
+                # Build claim graph if enabled
+                claim_graph = None
+                if graph_builder:
+                    try:
+                        claim_graph = graph_builder.build(story)
+                    except Exception as e:
+                        logger.warning(
+                            "claim_graph_failed",
+                            story_id=story.id,
+                            error=str(e),
+                        )
+
+                synthesized = summarizer.synthesize(story, claim_graph=claim_graph)
                 if synthesized:
                     synthesized.edition = edition
                     results.append(synthesized)
@@ -425,10 +439,24 @@ def run_pipeline_cycle(
     console.print(f"[dim]  Edition: {edition}[/dim]")
     synthesis_counts = {}
 
+    # Build claim graph builder if enabled
+    graph_builder = None
+    if config.claim_graph.enabled:
+        graph_builder = ClaimGraphBuilder(
+            base_url=config.embedding.base_url,
+            model=config.embedding.model,
+            similarity_threshold=config.claim_graph.similarity_threshold,
+            min_sources_corroborated=config.claim_graph.min_sources_corroborated,
+            embedding_concurrency=config.claim_graph.embedding_concurrency,
+            min_chunk_chars=config.claim_graph.min_chunk_chars,
+            max_chunk_chars=config.claim_graph.max_chunk_chars,
+        )
+        console.print(f"[dim]  Claim graph: enabled (threshold={config.claim_graph.similarity_threshold})[/dim]")
+
     for column in COLUMNS:
         console.print(f"  [dim]{column}...[/dim]", end=" ")
         try:
-            count = run_synthesis(os_client, llm_client, column, edition=edition, limit=stories_per_column, reviewer=reviewer)
+            count = run_synthesis(os_client, llm_client, column, edition=edition, limit=stories_per_column, reviewer=reviewer, graph_builder=graph_builder)
             synthesis_counts[column] = count
             console.print(f"[green]{count} stories[/green]")
         except Exception as e:
