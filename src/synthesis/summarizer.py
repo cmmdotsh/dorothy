@@ -382,13 +382,19 @@ class StorySummarizer:
             sections.append(f"### OTHER\n{formatted}")
         return "\n\n".join(sections)
 
-    def _format_article(self, article: dict) -> str:
-        """Format a single article for the prompt."""
+    def _format_article(self, article: dict, max_body_chars: int = 2000) -> str:
+        """Format a single article for the prompt.
+
+        Prefers full body text (from extraction) over RSS summary.
+        """
         source = article.get("source_name", "Unknown")
         headline = article.get("headline", "")
+        body = article.get("body")
         summary = article.get("summary", "")
 
-        if summary:
+        if body:
+            return f"**{source}**: {headline}\n{body[:max_body_chars]}"
+        elif summary:
             return f"**{source}**: {headline}\n  {summary[:500]}"
         return f"**{source}**: {headline}"
 

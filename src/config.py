@@ -80,6 +80,18 @@ class ReviewerSettings(BaseSettings):
         env_prefix = "REVIEWER_"
 
 
+class ExtractorSettings(BaseSettings):
+    """Article body extraction settings."""
+
+    enabled: bool = True
+    timeout: float = 30.0
+    delay: float = 1.0
+    batch_size: int = 50
+
+    class Config:
+        env_prefix = "EXTRACTOR_"
+
+
 class PodcastSettings(BaseSettings):
     """Podcast generation settings."""
 
@@ -111,6 +123,7 @@ class DorothyConfig:
         self.embedding = EmbeddingSettings()
         self.llm = LLMSettings()
         self.reviewer = ReviewerSettings()
+        self.extractor = ExtractorSettings()
         self.podcast = PodcastSettings()
         self._sources: list[Source] = []
 

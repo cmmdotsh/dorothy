@@ -106,6 +106,14 @@ class Article(BaseModel):
         None, description="Editorial perspective of source (tech column only)"
     )
 
+    # Full article body (extracted from URL, Markdown format)
+    body: Optional[str] = Field(
+        None, description="Full article text extracted from URL as Markdown"
+    )
+    body_extracted_at: Optional[datetime] = Field(
+        None, description="When body extraction was attempted (set even on failure)"
+    )
+
     # Image from RSS feed
     image_url: Optional[str] = Field(
         None, description="Article thumbnail/hero image URL"
@@ -134,6 +142,8 @@ class Article(BaseModel):
             "source_region": self.source_region,
             "source_perspective": self.source_perspective,
             "embedding": self.embedding,
+            "body": self.body,
+            "body_extracted_at": self.body_extracted_at.isoformat() if self.body_extracted_at else None,
             "image_url": self.image_url,
         }
 

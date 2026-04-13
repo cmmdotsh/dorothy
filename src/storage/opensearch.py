@@ -112,6 +112,8 @@ ARTICLE_MAPPING = {
                 "fields": {"keyword": {"type": "keyword", "ignore_above": 500}},
             },
             "summary": {"type": "text", "analyzer": "standard"},
+            "body": {"type": "text", "analyzer": "standard"},
+            "body_extracted_at": {"type": "date"},
             "url": {"type": "keyword"},
             "pub_date": {"type": "date"},
             "fetched_at": {"type": "date"},
@@ -322,6 +324,70 @@ class OpenSearchClient:
         except Exception as e:
             logger.error("get_articles_without_embeddings_failed", error=str(e))
             return []
+
+    def get_articles_without_body(
+        self, size: int = 50, index_name: Optional[str] = None
+    ) -> list[dict]:
+        """Get articles that haven't had body extraction attempted yet."""
+        if index_name is None:
+            index_name = self.get_current_index_name()
+
+        body = {
+            "query": {
+                "bool": {
+                    "must_not": [{"exists": {"field": "body_extracted_at"}}],
+                }
+            },
+            "size": size,
+            "sort": [{"pub_date": {"order": "desc"}}],
+            "_source": ["id", "url", "headline", "source_name"],
+        }
+
+        try:
+            response = self.client.search(index=index_name, body=body)
+            return [hit["_source"] for hit in response["hits"]["hits"]]
+        except Exception as e:
+            logger.error("get_articles_without_body_failed", error=str(e))
+            return []
+
+    def update_article_body(
+        self, article_id: str, body: str, index_name: Optional[str] = None
+    ) -> bool:
+        """Update an article with extracted body text."""
+        if index_name is None:
+            index_name = self.get_current_index_name()
+
+        try:
+            self.client.update(
+                index=index_name,
+                id=article_id,
+                body={"doc": {
+                    "body": body,
+                    "body_extracted_at": utcnow().isoformat(),
+                }},
+            )
+            return True
+        except Exception as e:
+            logger.error("update_article_body_failed", article_id=article_id, error=str(e))
+            return False
+
+    def mark_body_extraction_failed(
+        self, article_id: str, index_name: Optional[str] = None
+    ) -> bool:
+        """Mark body extraction as attempted but failed (prevents retry)."""
+        if index_name is None:
+            index_name = self.get_current_index_name()
+
+        try:
+            self.client.update(
+                index=index_name,
+                id=article_id,
+                body={"doc": {"body_extracted_at": utcnow().isoformat()}},
+            )
+            return True
+        except Exception as e:
+            logger.error("mark_body_extraction_failed", article_id=article_id, error=str(e))
+            return False
 
     def update_article_embedding(
         self, article_id: str, embedding: list[float], index_name: Optional[str] = None

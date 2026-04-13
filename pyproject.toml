@@ -30,6 +30,9 @@ dependencies = [
     # HTTP client
     "httpx>=0.25.0",
 
+    # Article text extraction (HTML -> Markdown)
+    "trafilatura>=2.0.0",
+
     # Scheduling
     "schedule>=1.2.0",
 

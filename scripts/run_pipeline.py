@@ -34,6 +34,7 @@ from src.synthesis.reviewer import ArticleReviewer
 from src.synthesis.summarizer import compute_story_timing
 from src.embeddings import EmbeddingClient
 from src.embeddings.generator import generate_embeddings
+from src.fetcher.extractor import ArticleExtractor
 from scripts.render_static import StaticSiteGenerator
 
 structlog.configure(
@@ -80,6 +81,28 @@ def run_fetch(os_client: OpenSearchClient) -> int:
         os_client.bulk_index_articles(articles, index_name)
 
     return len(seen_urls)
+
+
+def run_extraction(os_client: OpenSearchClient) -> int:
+    """Extract full article body text for articles missing it. Returns count processed."""
+    if not config.extractor.enabled:
+        return 0
+
+    index_name = os_client.get_current_index_name()
+    articles = os_client.get_articles_without_body(
+        size=config.extractor.batch_size,
+        index_name=index_name,
+    )
+
+    if not articles:
+        return 0
+
+    extractor = ArticleExtractor(
+        timeout=config.extractor.timeout,
+        delay=config.extractor.delay,
+    )
+    stats = extractor.extract_batch(articles, os_client, index_name)
+    return stats["processed"]
 
 
 def run_embeddings(os_client: OpenSearchClient) -> int:
@@ -309,7 +332,7 @@ def run_render_deploy() -> None:
     output_dir = Path("output")
 
     # Render
-    console.print("\n[dim]Step 4: Rendering static site...[/dim]")
+    console.print("\n[dim]Step 5: Rendering static site...[/dim]")
     try:
         generator = StaticSiteGenerator(output_dir)
         generator.clean()
@@ -370,8 +393,21 @@ def run_pipeline_cycle(
         console.print(f"[red]  Fetch failed: {e}[/red]")
         new_articles = 0
 
-    # Step 2: Generate embeddings
-    console.print("\n[dim]Step 2: Generating embeddings...[/dim]")
+    # Step 2: Extract full article text
+    console.print("\n[dim]Step 2: Extracting article bodies...[/dim]")
+    try:
+        extracted_count = run_extraction(os_client)
+        if extracted_count > 0:
+            console.print(f"[green]  Extracted body text for {extracted_count} articles[/green]")
+        else:
+            console.print(f"[dim]  No articles need body extraction[/dim]")
+    except Exception as e:
+        logger.error("extraction_failed", error=str(e))
+        console.print(f"[red]  Extraction failed: {e}[/red]")
+        extracted_count = 0
+
+    # Step 3: Generate embeddings
+    console.print("\n[dim]Step 3: Generating embeddings...[/dim]")
     try:
         embedded_count = run_embeddings(os_client)
         if embedded_count > 0:
@@ -383,8 +419,8 @@ def run_pipeline_cycle(
         console.print(f"[red]  Embedding failed: {e}[/red]")
         embedded_count = 0
 
-    # Step 3: Synthesize each column
-    console.print("\n[dim]Step 3: Synthesizing stories...[/dim]")
+    # Step 4: Synthesize each column
+    console.print("\n[dim]Step 4: Synthesizing stories...[/dim]")
     edition = os_client.increment_edition()
     console.print(f"[dim]  Edition: {edition}[/dim]")
     synthesis_counts = {}
