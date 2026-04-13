@@ -47,7 +47,7 @@ class EmbeddingSettings(BaseSettings):
 
     base_url: str = "http://192.168.0.149:11434"
     model: str = "mxbai-embed-large"
-    batch_size: int = 32
+    batch_size: int = 8
     enabled: bool = True
 
     class Config:
