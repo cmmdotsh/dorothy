@@ -10,18 +10,22 @@ from src.storage import OpenSearchClient
 logger = structlog.get_logger(__name__)
 
 
-def _prepare_text(article: dict) -> str:
+def _prepare_text(article: dict, max_chars: int = 500) -> str:
     """
     Prepare article text for embedding.
 
-    Concatenates headline and summary for richer semantic representation.
+    Concatenates headline and summary, truncated to fit the embedding model's
+    context window. mxbai-embed-large has a 512 token limit (~1800 chars) but
+    Ollama counts the entire batch against context, so we keep each input short.
     """
     headline = article.get("headline", "")
     summary = article.get("summary", "") or ""
 
     if summary:
-        return f"{headline}\n\n{summary}"
-    return headline
+        text = f"{headline}\n\n{summary}"
+    else:
+        text = headline
+    return text[:max_chars]
 
 
 def generate_embeddings(
@@ -89,18 +93,32 @@ def generate_embeddings(
             yield batch_stats
 
         except EmbeddingError as e:
-            logger.error("embedding_batch_failed", error=str(e), batch_size=len(articles))
-            total_errors += len(articles)
+            logger.warning("embedding_batch_failed_trying_individually", error=str(e), batch_size=len(articles))
+            # Fall back to embedding one at a time to skip bad articles
+            batch_success = 0
+            batch_errors = 0
+            for article_id, text in zip(article_ids, texts):
+                try:
+                    single_embedding = embed_client.embed([text])
+                    os_client.bulk_update_embeddings([(article_id, single_embedding[0])], index_name)
+                    batch_success += 1
+                except EmbeddingError:
+                    # Store a zero-vector so this article isn't retried forever
+                    zero_vec = [0.0] * 1024
+                    os_client.bulk_update_embeddings([(article_id, zero_vec)], index_name)
+                    batch_errors += 1
+
             total_processed += len(articles)
+            total_success += batch_success
+            total_errors += batch_errors
 
             yield {
                 "batch_size": len(articles),
-                "batch_success": 0,
-                "batch_errors": len(articles),
+                "batch_success": batch_success,
+                "batch_errors": batch_errors,
                 "total_processed": total_processed,
                 "total_success": total_success,
                 "total_errors": total_errors,
-                "error": str(e),
             }
 
         if limit and total_processed >= limit:
