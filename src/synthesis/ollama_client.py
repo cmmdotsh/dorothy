@@ -175,18 +175,34 @@ class OllamaClient:
         return int(len(text) / CHARS_PER_TOKEN)
 
     def health_check(self) -> bool:
-        """Check if Ollama is reachable and has models available."""
+        """Check if the LLM server is reachable.
+
+        Tries the OpenAI-compatible /v1/models endpoint first (works with
+        both Ollama and mlx-lm), then falls back to Ollama's /api/tags.
+        """
         try:
+            # Try OpenAI-compatible endpoint first (works with mlx-lm + Ollama)
+            response = self.client.get(f"{self.base_url}/v1/models")
+            response.raise_for_status()
+            logger.info(
+                "llm_server_healthy",
+                base_url=self.base_url,
+                endpoint="/v1/models",
+            )
+            return True
+        except Exception:
+            pass
+
+        try:
+            # Fall back to Ollama-specific endpoint
             response = self.client.get(f"{self.base_url}/api/tags")
             response.raise_for_status()
-            data = response.json()
-            models = [m["name"] for m in data.get("models", [])]
             logger.info(
-                "ollama_healthy",
+                "llm_server_healthy",
                 base_url=self.base_url,
-                models_available=len(models),
+                endpoint="/api/tags",
             )
             return True
         except Exception as e:
-            logger.error("ollama_health_check_failed", error=str(e))
+            logger.error("llm_server_health_check_failed", error=str(e))
             return False

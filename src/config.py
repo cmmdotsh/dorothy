@@ -58,7 +58,7 @@ class LLMSettings(BaseSettings):
     """LLM service settings for story synthesis (via Ollama)."""
 
     base_url: str = "http://192.168.0.149:11434"
-    model: str = "qwen3.5:27b"
+    model: str = "qwen3.5:35b-a3b-mlx-bf16"
     temperature: float = 0.3
     max_tokens: int = 4096
     context_length: int = 32768
@@ -68,10 +68,10 @@ class LLMSettings(BaseSettings):
 
 
 class ReviewerSettings(BaseSettings):
-    """Quality reviewer settings (via Ollama, separate model)."""
+    """Quality reviewer settings (via mlx-lm or Ollama)."""
 
-    base_url: str = "http://192.168.0.149:11434"
-    model: str = "gemma4:31b"
+    base_url: str = "http://192.168.0.149:8081"
+    model: str = "mlx-community/gemma-4-31b-it-8bit"
     temperature: float = 0.3
     max_tokens: int = 4096
     enabled: bool = True
