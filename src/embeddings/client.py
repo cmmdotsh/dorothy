@@ -79,8 +79,13 @@ class EmbeddingClient:
             return embeddings
 
         except httpx.HTTPStatusError as e:
-            logger.error("embedding_api_error", status=e.response.status_code, error=str(e))
-            raise EmbeddingError(f"API error: {e.response.status_code}") from e
+            body = ""
+            try:
+                body = e.response.text[:500]
+            except Exception:
+                pass
+            logger.error("embedding_api_error", status=e.response.status_code, error=str(e), response_body=body, input_count=len(texts))
+            raise EmbeddingError(f"API error: {e.response.status_code} — {body}") from e
         except httpx.RequestError as e:
             logger.error("embedding_request_error", error=str(e))
             raise EmbeddingError(f"Request failed: {e}") from e
