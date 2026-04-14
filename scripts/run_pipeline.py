@@ -14,7 +14,6 @@ import argparse
 import signal
 import sys
 import time
-from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -28,7 +27,7 @@ from src.fetcher import fetch_all_sources
 from src.models import Article
 from src.storage import OpenSearchClient
 from src.clustering import StoryGrouper
-from src.synthesis import LLMClient, StorySummarizer, SynthesizedStory
+from src.synthesis import LLMClient, StorySummarizer
 from src.synthesis.ollama_client import OllamaClient
 from src.synthesis.reviewer import ArticleReviewer
 from src.synthesis.summarizer import compute_story_timing
@@ -170,10 +169,6 @@ def run_synthesis(
         # Track URLs of stories synthesized in this batch for intra-batch dedup
         batch_url_sets: list[set[str]] = []
 
-        # Pending review futures: (future, synthesized_story) pairs
-        pending_reviews: list[tuple[Future, SynthesizedStory]] = []
-        review_executor = ThreadPoolExecutor(max_workers=1) if reviewer else None
-
         stories_to_process = multi_source[:limit] if limit else multi_source
         for story in stories_to_process:
             try:
@@ -251,24 +246,47 @@ def run_synthesis(
                 synthesized = summarizer.synthesize(story, claim_graph=claim_graph)
                 if synthesized:
                     synthesized.edition = edition
-                    results.append(synthesized)
                     # Track for intra-batch dedup
                     if cluster_urls:
                         batch_url_sets.append(set(cluster_urls))
 
-                    # Submit review to background thread — gemma4 reviews
-                    # while qwen3.5 continues synthesizing the next story
-                    if reviewer and review_executor:
-                        articles_text = summarizer._build_prompt(story)
-                        story_column = summarizer._story_column(story)
-                        future = review_executor.submit(
-                            reviewer.review_and_improve,
-                            headline=synthesized.generated_headline,
-                            article=synthesized.article,
-                            source_articles_text=articles_text,
-                            column=story_column,
-                        )
-                        pending_reviews.append((future, synthesized))
+                    # Review inline (sequential — both models share Ollama
+                    # on the same GPU, so only one can run at full speed)
+                    if reviewer:
+                        try:
+                            articles_text = summarizer._build_prompt(story)
+                            story_column = summarizer._story_column(story)
+                            review_result = reviewer.review_and_improve(
+                                headline=synthesized.generated_headline,
+                                article=synthesized.article,
+                                source_articles_text=articles_text,
+                                column=story_column,
+                            )
+                            synthesized.quality_scores = review_result.quality_scores
+                            synthesized.review_improvements = review_result.improvements_made or None
+                            if review_result.was_improved:
+                                synthesized.generated_headline = review_result.improved_headline
+                                synthesized.article = review_result.improved_article
+                                logger.info(
+                                    "article_improved_by_review",
+                                    story_id=synthesized.story_id,
+                                    scores=review_result.quality_scores,
+                                    improvements=review_result.improvements_made,
+                                )
+                            else:
+                                logger.info(
+                                    "article_passed_review",
+                                    story_id=synthesized.story_id,
+                                    scores=review_result.quality_scores,
+                                )
+                        except Exception as e:
+                            logger.warning(
+                                "review_pass_failed",
+                                story_id=synthesized.story_id,
+                                error=str(e),
+                            )
+
+                    results.append(synthesized)
 
             except Exception as e:
                 logger.error(
@@ -278,37 +296,6 @@ def run_synthesis(
                     error=str(e),
                 )
                 continue
-
-        # Collect all pending reviews
-        for future, synthesized in pending_reviews:
-            try:
-                review_result = future.result(timeout=600)
-                synthesized.quality_scores = review_result.quality_scores
-                synthesized.review_improvements = review_result.improvements_made or None
-                if review_result.was_improved:
-                    synthesized.generated_headline = review_result.improved_headline
-                    synthesized.article = review_result.improved_article
-                    logger.info(
-                        "article_improved_by_review",
-                        story_id=synthesized.story_id,
-                        scores=review_result.quality_scores,
-                        improvements=review_result.improvements_made,
-                    )
-                else:
-                    logger.info(
-                        "article_passed_review",
-                        story_id=synthesized.story_id,
-                        scores=review_result.quality_scores,
-                    )
-            except Exception as e:
-                logger.warning(
-                    "review_pass_failed",
-                    story_id=synthesized.story_id,
-                    error=str(e),
-                )
-
-        if review_executor:
-            review_executor.shutdown(wait=False)
 
         if skipped:
             logger.info("stories_skipped_unchanged", column=column, skipped=skipped)

@@ -68,10 +68,10 @@ class LLMSettings(BaseSettings):
 
 
 class ReviewerSettings(BaseSettings):
-    """Quality reviewer settings (via mlx-lm or Ollama)."""
+    """Quality reviewer settings (via Ollama)."""
 
-    base_url: str = "http://192.168.0.149:8081"
-    model: str = "mlx-community/gemma-4-31b-it-8bit"
+    base_url: str = "http://192.168.0.149:11434"
+    model: str = "gemma4:31b"
     temperature: float = 0.3
     max_tokens: int = 4096
     enabled: bool = True
