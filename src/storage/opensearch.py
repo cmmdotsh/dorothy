@@ -434,6 +434,7 @@ class OpenSearchClient:
             actions,
             raise_on_error=False,
             stats_only=False,
+            refresh="wait_for",
         )
 
         error_count = len(errors) if isinstance(errors, list) else 0
