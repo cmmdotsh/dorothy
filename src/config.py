@@ -43,9 +43,9 @@ class SchedulerSettings(BaseSettings):
 
 
 class EmbeddingSettings(BaseSettings):
-    """Embedding service settings (via Ollama)."""
+    """Embedding service settings (via LMStudio)."""
 
-    base_url: str = "http://192.168.0.149:11434"
+    base_url: str = "http://192.168.0.149:1234"
     model: str = "mxbai-embed-large"
     batch_size: int = 8
     enabled: bool = True
@@ -55,10 +55,10 @@ class EmbeddingSettings(BaseSettings):
 
 
 class LLMSettings(BaseSettings):
-    """LLM service settings for story synthesis (via Ollama)."""
+    """LLM service settings for story synthesis (via LMStudio)."""
 
-    base_url: str = "http://192.168.0.149:11434"
-    model: str = "qwen3.5:35b-a3b-mlx-bf16"
+    base_url: str = "http://192.168.0.149:1234"
+    model: str = "mlx-community/qwen3.5-35b-a3b"
     temperature: float = 0.3
     max_tokens: int = 4096
     context_length: int = 32768
@@ -68,10 +68,10 @@ class LLMSettings(BaseSettings):
 
 
 class ReviewerSettings(BaseSettings):
-    """Quality reviewer settings (via Ollama)."""
+    """Quality reviewer settings (via LMStudio)."""
 
-    base_url: str = "http://192.168.0.149:11434"
-    model: str = "gemma4:31b"
+    base_url: str = "http://192.168.0.149:1234"
+    model: str = "google/gemma-4-26b-a4b"
     temperature: float = 0.3
     max_tokens: int = 4096
     enabled: bool = True

@@ -56,7 +56,7 @@ RSS Feeds → OpenSearch → Embeddings → k-NN Clustering → LLM Synthesis �
 
 ### Prerequisites
 - OpenSearch running on localhost:9200 (see `docker-compose.yml`)
-- Ollama server at http://192.168.0.149:11434 (embeddings, synthesis, and review)
+- LMStudio server at http://192.168.0.149:1234 (embeddings, synthesis, and review)
 - Python 3.13 with venv at `.venv/`
 
 ### Commands
