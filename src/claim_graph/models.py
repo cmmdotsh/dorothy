@@ -87,6 +87,50 @@ class ClaimGraph:
 
         return "\n\n".join(sections)
 
+    def to_viz_dict(self) -> dict:
+        """Serialize the claim graph for storage and frontend visualization.
+
+        Strips embeddings — only keeps source metadata, text, and cluster structure.
+        """
+        clusters = []
+        for cluster in self.corroborated:
+            seen: set[str] = set()
+            sources = []
+            for chunk in cluster.chunks:
+                key = chunk.source_slug or chunk.source_name
+                if key in seen:
+                    continue
+                seen.add(key)
+                sources.append({
+                    "source_name": chunk.source_name,
+                    "source_slug": chunk.source_slug,
+                    "source_bias": chunk.source_bias,
+                    "text": chunk.text,
+                })
+            clusters.append({
+                "representative_text": cluster.representative_text,
+                "source_count": cluster.source_count,
+                "source_names": cluster.source_names,
+                "avg_similarity": round(cluster.avg_similarity, 3),
+                "sources": sources,
+            })
+
+        unique = []
+        for chunk in self.unique_details:
+            unique.append({
+                "source_name": chunk.source_name,
+                "source_slug": chunk.source_slug,
+                "source_bias": chunk.source_bias,
+                "text": chunk.text,
+            })
+
+        return {
+            "corroborated": clusters,
+            "unique_details": unique,
+            "chunk_count": self.chunk_count,
+            "edge_count": self.edge_count,
+        }
+
     @staticmethod
     def _source_label(chunk: Chunk, column: str) -> str:
         """Build a source label with the relevant dimension annotation."""

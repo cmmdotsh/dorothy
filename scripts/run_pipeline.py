@@ -28,11 +28,9 @@ from src.models import Article
 from src.storage import OpenSearchClient
 from src.clustering import StoryGrouper
 from src.synthesis import LLMClient, StorySummarizer
-from src.synthesis.ollama_client import OllamaClient
-from src.synthesis.reviewer import ArticleReviewer
 from src.synthesis.summarizer import compute_story_timing
 from src.embeddings import EmbeddingClient
-from src.embeddings.generator import generate_embeddings
+from src.embeddings.generator import generate_embeddings, generate_embeddings_for_articles
 from src.claim_graph import ClaimGraphBuilder
 from src.fetcher.extractor import ArticleExtractor
 from scripts.render_static import StaticSiteGenerator
@@ -54,13 +52,21 @@ console = Console()
 COLUMNS = ["politics", "tech", "money", "sports", "lifestyle"]
 
 
-def run_fetch(os_client: OpenSearchClient) -> int:
-    """Fetch new articles from all sources. Returns count of new articles."""
+def run_fetch(os_client: OpenSearchClient, embed_client: Optional[EmbeddingClient] = None) -> int:
+    """Fetch new articles from all sources, embedding inline. Returns count of new articles."""
     index_name = os_client.ensure_index()
     sources = config.get_active_rss_sources()
 
     articles: list[Article] = []
     seen_urls: set[str] = set()
+
+    def _store_and_embed(batch: list[Article]) -> None:
+        os_client.bulk_index_articles(batch, index_name)
+        if embed_client:
+            article_dicts = [{"id": a.id, "headline": a.headline, "summary": a.summary} for a in batch]
+            updates = generate_embeddings_for_articles(article_dicts, embed_client)
+            if updates:
+                os_client.bulk_update_embeddings(updates, index_name)
 
     for article in fetch_all_sources(sources):
         url_str = str(article.url)
@@ -74,11 +80,11 @@ def run_fetch(os_client: OpenSearchClient) -> int:
         articles.append(article)
 
         if len(articles) >= config.fetcher.batch_size:
-            os_client.bulk_index_articles(articles, index_name)
+            _store_and_embed(articles)
             articles = []
 
     if articles:
-        os_client.bulk_index_articles(articles, index_name)
+        _store_and_embed(articles)
 
     return len(seen_urls)
 
@@ -139,13 +145,34 @@ def run_embeddings(os_client: OpenSearchClient) -> int:
         embed_client.close()
 
 
+def _write_story(
+    summarizer: StorySummarizer,
+    story,
+    edition: int,
+    graph_builder: Optional[ClaimGraphBuilder],
+):
+    """Write a single story (no review). Returns (synthesized, story) or (None, story)."""
+    claim_graph = None
+    if graph_builder:
+        try:
+            claim_graph = graph_builder.build(story)
+        except Exception as e:
+            logger.warning("claim_graph_failed", story_id=story.id, error=str(e))
+
+    synthesized = summarizer.synthesize(story, claim_graph=claim_graph)
+    if not synthesized:
+        return None, story
+
+    synthesized.edition = edition
+    return synthesized, story
+
+
 def run_synthesis(
     os_client: OpenSearchClient,
     llm_client: LLMClient,
     column: str,
     edition: int = 1,
     limit: Optional[int] = None,
-    reviewer: Optional[ArticleReviewer] = None,
     graph_builder: Optional[ClaimGraphBuilder] = None,
 ) -> int:
     """Synthesize stories for a column with deduplication. Returns count of stories synthesized."""
@@ -164,15 +191,15 @@ def run_synthesis(
             return 0
 
         summarizer = StorySummarizer(llm_client)
-        results = []
         skipped = 0
         # Track URLs of stories synthesized in this batch for intra-batch dedup
         batch_url_sets: list[set[str]] = []
 
-        stories_to_process = multi_source[:limit] if limit else multi_source
-        for story in stories_to_process:
+        # Pass 1: sequential dedup filtering (fast — set ops + OpenSearch queries)
+        stories_to_synthesize = []
+        candidates = multi_source[:limit] if limit else multi_source
+        for story in candidates:
             try:
-                # Extract article URLs for dedup check
                 cluster_urls = sorted(
                     str(a.get("url", "")) for a in story.articles if a.get("url")
                 )
@@ -181,7 +208,7 @@ def run_synthesis(
                     cluster_url_set = set(cluster_urls)
 
                     # Intra-batch dedup: skip if this story overlaps heavily
-                    # with something we already synthesized in this batch
+                    # with something we already queued in this batch
                     batch_dup = False
                     for prev_urls in batch_url_sets:
                         intersection = len(cluster_url_set & prev_urls)
@@ -204,9 +231,6 @@ def run_synthesis(
                         existing_urls = set(existing.get("article_urls", []))
                         new_urls = cluster_url_set - existing_urls
 
-                        # Any overlap above 0.15 means it's the same event.
-                        # Only re-synthesize if there are 3+ genuinely new
-                        # articles (meaningful new coverage), otherwise skip.
                         if jaccard > 0.15 and len(new_urls) < 3:
                             logger.info(
                                 "story_unchanged",
@@ -219,7 +243,6 @@ def run_synthesis(
                             continue
 
                         if len(new_urls) >= 3:
-                            # Story has meaningfully evolved — re-synthesize
                             logger.info(
                                 "story_evolved",
                                 story_id=story.id,
@@ -231,66 +254,13 @@ def run_synthesis(
                                 existing["story_id"], story.id
                             )
 
-                # Build claim graph if enabled
-                claim_graph = None
-                if graph_builder:
-                    try:
-                        claim_graph = graph_builder.build(story)
-                    except Exception as e:
-                        logger.warning(
-                            "claim_graph_failed",
-                            story_id=story.id,
-                            error=str(e),
-                        )
+                    batch_url_sets.append(cluster_url_set)
 
-                synthesized = summarizer.synthesize(story, claim_graph=claim_graph)
-                if synthesized:
-                    synthesized.edition = edition
-                    # Track for intra-batch dedup
-                    if cluster_urls:
-                        batch_url_sets.append(set(cluster_urls))
-
-                    # Review inline (sequential — both models share Ollama
-                    # on the same GPU, so only one can run at full speed)
-                    if reviewer:
-                        try:
-                            articles_text = summarizer._build_prompt(story)
-                            story_column = summarizer._story_column(story)
-                            review_result = reviewer.review_and_improve(
-                                headline=synthesized.generated_headline,
-                                article=synthesized.article,
-                                source_articles_text=articles_text,
-                                column=story_column,
-                            )
-                            synthesized.quality_scores = review_result.quality_scores
-                            synthesized.review_improvements = review_result.improvements_made or None
-                            if review_result.was_improved:
-                                synthesized.generated_headline = review_result.improved_headline
-                                synthesized.article = review_result.improved_article
-                                logger.info(
-                                    "article_improved_by_review",
-                                    story_id=synthesized.story_id,
-                                    scores=review_result.quality_scores,
-                                    improvements=review_result.improvements_made,
-                                )
-                            else:
-                                logger.info(
-                                    "article_passed_review",
-                                    story_id=synthesized.story_id,
-                                    scores=review_result.quality_scores,
-                                )
-                        except Exception as e:
-                            logger.warning(
-                                "review_pass_failed",
-                                story_id=synthesized.story_id,
-                                error=str(e),
-                            )
-
-                    results.append(synthesized)
+                stories_to_synthesize.append(story)
 
             except Exception as e:
                 logger.error(
-                    "story_synthesis_error",
+                    "story_dedup_error",
                     story_id=story.id,
                     column=column,
                     error=str(e),
@@ -299,6 +269,20 @@ def run_synthesis(
 
         if skipped:
             logger.info("stories_skipped_unchanged", column=column, skipped=skipped)
+
+        if not stories_to_synthesize:
+            return 0
+
+        # Pass 2: write each story sequentially
+        results = []
+
+        for story in stories_to_synthesize:
+            try:
+                synthesized, story = _write_story(summarizer, story, edition, graph_builder)
+                if synthesized:
+                    results.append(synthesized)
+            except Exception as e:
+                logger.error("story_synthesis_error", story_id=story.id, column=column, error=str(e))
 
         # Store in OpenSearch
         if results:
@@ -375,7 +359,6 @@ def run_pipeline_cycle(
     llm_client: LLMClient,
     stories_per_column: Optional[int] = None,
     render_and_deploy: bool = False,
-    reviewer: Optional[ArticleReviewer] = None,
 ) -> dict:
     """Run a full pipeline cycle: fetch → synthesize all columns."""
     start_time = datetime.now(timezone.utc)
@@ -384,10 +367,21 @@ def run_pipeline_cycle(
         f"[bold blue]Pipeline Cycle Starting[/bold blue]\n{start_time.strftime('%Y-%m-%d %H:%M:%S UTC')}"
     ))
 
-    # Step 1: Fetch
-    console.print("\n[dim]Step 1: Fetching articles...[/dim]")
+    # Initialize embedding client for inline embedding during fetch
+    embed_client = None
+    if config.embedding.enabled:
+        embed_client = EmbeddingClient(
+            base_url=config.embedding.base_url,
+            model=config.embedding.model,
+        )
+        if not embed_client.health_check():
+            logger.warning("embedding_service_unavailable_for_inline", base_url=config.embedding.base_url)
+            embed_client = None
+
+    # Step 1: Fetch (+ inline embedding)
+    console.print("\n[dim]Step 1: Fetching articles" + (" + embedding inline..." if embed_client else "...") + "[/dim]")
     try:
-        new_articles = run_fetch(os_client)
+        new_articles = run_fetch(os_client, embed_client=embed_client)
         console.print(f"[green]  Fetched {new_articles} new articles[/green]")
     except Exception as e:
         logger.error("fetch_failed", error=str(e))
@@ -407,8 +401,8 @@ def run_pipeline_cycle(
         console.print(f"[red]  Extraction failed: {e}[/red]")
         extracted_count = 0
 
-    # Step 3: Generate embeddings
-    console.print("\n[dim]Step 3: Generating embeddings...[/dim]")
+    # Step 3: Generate embeddings (catch-up for any missed during fetch)
+    console.print("\n[dim]Step 3: Embedding catch-up...[/dim]")
     try:
         embedded_count = run_embeddings(os_client)
         if embedded_count > 0:
@@ -443,7 +437,7 @@ def run_pipeline_cycle(
     for column in COLUMNS:
         console.print(f"  [dim]{column}...[/dim]", end=" ")
         try:
-            count = run_synthesis(os_client, llm_client, column, edition=edition, limit=stories_per_column, reviewer=reviewer, graph_builder=graph_builder)
+            count = run_synthesis(os_client, llm_client, column, edition=edition, limit=stories_per_column, graph_builder=graph_builder)
             synthesis_counts[column] = count
             console.print(f"[green]{count} stories[/green]")
         except Exception as e:
@@ -516,31 +510,16 @@ def daemon_mode(interval_minutes: int, stories_per_column: int, render_and_deplo
         console.print(f"[red]LLM unavailable at {config.llm.base_url}[/red]")
         sys.exit(1)
 
-    # Set up article reviewer if enabled
-    reviewer = None
-    if config.reviewer.enabled:
-        reviewer_client = OllamaClient(
-            base_url=config.reviewer.base_url,
-            model=config.reviewer.model,
-            temperature=config.reviewer.temperature,
-            max_tokens=config.reviewer.max_tokens,
-        )
-        if reviewer_client.health_check():
-            reviewer = ArticleReviewer(reviewer_client)
-            console.print(f"[dim]Reviewer: {config.reviewer.model} @ {config.reviewer.base_url}[/dim]")
-        else:
-            console.print(f"[yellow]Reviewer unavailable at {config.reviewer.base_url}, skipping review pass[/yellow]")
-
     console.print(f"[dim]OpenSearch: {config.opensearch.host}:{config.opensearch.port}[/dim]")
     console.print(f"[dim]LLM: {config.llm.model} @ {config.llm.base_url}[/dim]")
     console.print()
 
     # Run immediately
-    run_pipeline_cycle(os_client, llm_client, stories_per_column, render_and_deploy, reviewer=reviewer)
+    run_pipeline_cycle(os_client, llm_client, stories_per_column, render_and_deploy)
 
     # Schedule future runs
     def scheduled_run():
-        run_pipeline_cycle(os_client, llm_client, stories_per_column, render_and_deploy, reviewer=reviewer)
+        run_pipeline_cycle(os_client, llm_client, stories_per_column, render_and_deploy)
 
     # Schedule on the hour if interval is a whole number of hours
     if interval_minutes == 60:
@@ -556,8 +535,6 @@ def daemon_mode(interval_minutes: int, stories_per_column: int, render_and_deplo
     def shutdown_handler(signum, frame):
         console.print("\n[yellow]Shutting down...[/yellow]")
         llm_client.close()
-        if reviewer and reviewer.llm:
-            reviewer.llm.close()
         sys.exit(0)
 
     signal.signal(signal.SIGINT, shutdown_handler)
@@ -621,28 +598,10 @@ def main() -> None:
             context_length=config.llm.context_length,
         )
 
-        # Set up article reviewer if enabled
-        reviewer = None
-        reviewer_client = None
-        if config.reviewer.enabled:
-            reviewer_client = OllamaClient(
-                base_url=config.reviewer.base_url,
-                model=config.reviewer.model,
-                temperature=config.reviewer.temperature,
-                max_tokens=config.reviewer.max_tokens,
-            )
-            if reviewer_client.health_check():
-                reviewer = ArticleReviewer(reviewer_client)
-                console.print(f"[dim]Reviewer: {config.reviewer.model} @ {config.reviewer.base_url}[/dim]")
-            else:
-                console.print(f"[yellow]Reviewer unavailable, skipping review pass[/yellow]")
-
         try:
-            run_pipeline_cycle(os_client, llm_client, args.stories, args.publish, reviewer=reviewer)
+            run_pipeline_cycle(os_client, llm_client, args.stories, args.publish)
         finally:
             llm_client.close()
-            if reviewer_client:
-                reviewer_client.close()
     else:
         daemon_mode(args.interval, args.stories, args.publish)
 

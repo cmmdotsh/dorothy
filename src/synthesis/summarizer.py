@@ -45,15 +45,16 @@ PERSPECTIVE_LABELS = {
 # ── Pass 1: Neutral Article ──
 
 ARTICLE_SYSTEM_PROMPT = """You are a senior wire service journalist. Your job is to write
-clear, factual, comprehensive news articles from multiple source reports.
+clear, factual news articles using ONLY information from the provided source reports.
 
 Guidelines:
 - Write in standard news article style: lead paragraph with the key facts,
   then expanding detail in subsequent paragraphs
 - Use neutral, precise language — no editorializing or opinion
 - Attribute specific claims to their sources when appropriate
-- Include relevant context and background
-- Write as if this is the definitive account of the story
+- ONLY include names, quotes, facts, and figures that appear in the source material
+- NEVER invent expert commentary, analyst quotes, or reactions not in the sources
+- If the sources don't provide enough detail on a point, omit it — do not fill gaps
 - Respond in JSON with "headline" and "article" fields"""
 
 # ── Pass 2: Coverage Analysis ──
@@ -74,15 +75,16 @@ Guidelines:
 # ── Sports-specific prompts ──
 
 SPORTS_ARTICLE_SYSTEM_PROMPT = """You are a senior sports journalist. Your job is to write
-clear, factual, comprehensive sports articles from multiple source reports around the world.
+clear, factual sports articles using ONLY information from the provided source reports.
 
 Guidelines:
 - Write in standard sports journalism style: lead with the key result or development,
   then expanding detail in subsequent paragraphs
 - Use neutral, precise language — no editorializing or homerism
 - Note how different regions cover the same story when relevant
-- Include relevant context, stats, and background
-- Write as if this is the definitive account of the story
+- ONLY include names, scores, stats, and quotes that appear in the source material
+- NEVER invent player quotes, analyst commentary, or statistics not in the sources
+- If the sources don't provide enough detail on a point, omit it — do not fill gaps
 - Respond in JSON with "headline" and "article" fields"""
 
 SPORTS_ANALYSIS_SYSTEM_PROMPT = """You are a sports media analyst who studies how outlets
@@ -101,16 +103,17 @@ Guidelines:
 # ── Tech-specific prompts ──
 
 TECH_ARTICLE_SYSTEM_PROMPT = """You are a senior technology journalist. Your job is to write
-clear, factual, comprehensive tech articles from multiple source reports across different
-editorial perspectives — consumer, enterprise, academic, and cultural.
+clear, factual tech articles using ONLY information from the provided source reports across
+different editorial perspectives — consumer, enterprise, academic, and cultural.
 
 Guidelines:
 - Write in standard tech journalism style: lead with the key development or announcement,
   then expanding detail in subsequent paragraphs
 - Use neutral, precise language — no hype or editorializing
 - Note how different perspectives frame the same story when relevant
-- Include relevant technical context, market data, and background
-- Write as if this is the definitive account of the story
+- ONLY include names, quotes, figures, and technical details that appear in the source material
+- NEVER invent analyst commentary, market predictions, or expert quotes not in the sources
+- If the sources don't provide enough detail on a point, omit it — do not fill gaps
 - Respond in JSON with "headline" and "article" fields"""
 
 TECH_ANALYSIS_SYSTEM_PROMPT = """You are a tech media analyst who studies how outlets with
@@ -172,6 +175,7 @@ class SynthesizedStory:
     last_pub_date: Optional[str] = None
     quality_scores: Optional[dict[str, float]] = None
     review_improvements: Optional[list[str]] = None
+    claim_graph: Optional[dict] = None
 
     @property
     def summary(self) -> str:
@@ -203,6 +207,7 @@ class SynthesizedStory:
             "last_pub_date": self.last_pub_date,
             "quality_scores": self.quality_scores,
             "review_improvements": self.review_improvements,
+            "claim_graph": self.claim_graph,
         }
 
     def to_markdown(self) -> str:
@@ -849,6 +854,7 @@ class StorySummarizer:
                 last_pub_date=timing.last_pub_date,
                 quality_scores=None,
                 review_improvements=None,
+                claim_graph=claim_graph.to_viz_dict() if claim_graph else None,
             )
 
             logger.info(

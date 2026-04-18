@@ -1,15 +1,11 @@
-"""Story synthesis module for Dorothy."""
+"""Synthesis package for Dorothy."""
 
-from src.synthesis.llm_client import LLMClient
-from src.synthesis.ollama_client import OllamaClient
-from src.synthesis.reviewer import ArticleReviewer, ReviewResult
+from src.synthesis.llm_client import LLMClient, LLMError
 from src.synthesis.summarizer import StorySummarizer, SynthesizedStory
 
 __all__ = [
     "LLMClient",
-    "OllamaClient",
-    "ArticleReviewer",
-    "ReviewResult",
+    "LLMError",
     "StorySummarizer",
     "SynthesizedStory",
 ]

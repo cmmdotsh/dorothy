@@ -38,11 +38,17 @@
     <div class="story-tabs">
         <input type="radio" name="story-tab" id="tab-article" class="tab-radio" checked>
         <input type="radio" name="story-tab" id="tab-analysis" class="tab-radio">
+        {% if story.claim_graph and story.claim_graph.corroborated %}
+        <input type="radio" name="story-tab" id="tab-claims" class="tab-radio">
+        {% endif %}
         <input type="radio" name="story-tab" id="tab-sources" class="tab-radio">
 
         <nav class="tab-bar">
             <label for="tab-article" class="tab-label">Article</label>
             <label for="tab-analysis" class="tab-label">Analysis</label>
+            {% if story.claim_graph and story.claim_graph.corroborated %}
+            <label for="tab-claims" class="tab-label">Claims</label>
+            {% endif %}
             <label for="tab-sources" class="tab-label">Sources</label>
         </nav>
 
@@ -123,6 +129,17 @@
             </section>
             {% endif %}
         </div>
+
+        {% if story.claim_graph and story.claim_graph.corroborated %}
+        <div class="tab-panel" id="panel-claims">
+            <section class="claim-graph-section">
+                <h3>Fact Corroboration</h3>
+                <p class="claim-graph-caption">Which sources independently confirm the same facts. Hover a claim to see its sources, or a source to see what it corroborates.</p>
+                <div id="claim-graph"></div>
+                <script id="claim-graph-data" type="application/json">{{ story.claim_graph|tojson }}</script>
+            </section>
+        </div>
+        {% endif %}
 
         <div class="tab-panel" id="panel-sources">
             {% if story.similarity_edges %}
@@ -228,8 +245,13 @@
     </footer>
 </article>
 
-{% if story.similarity_edges %}
+{% if story.similarity_edges or (story.claim_graph and story.claim_graph.corroborated) %}
 <script src="https://d3js.org/d3.v7.min.js"></script>
+{% endif %}
+{% if story.similarity_edges %}
 <script src="/static/{{ assets['similarity-web.js'] if assets is defined and 'similarity-web.js' in assets else 'similarity-web.js' }}"></script>
+{% endif %}
+{% if story.claim_graph and story.claim_graph.corroborated %}
+<script src="/static/{{ assets['claim-graph.js'] if assets is defined and 'claim-graph.js' in assets else 'claim-graph.js' }}"></script>
 {% endif %}
 {% endblock %}

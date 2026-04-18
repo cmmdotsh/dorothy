@@ -206,7 +206,7 @@ class StaticSiteGenerator:
     def copy_static_assets(self) -> None:
         """Copy static files to output with content-hashed filenames for CSS/JS."""
         self.assets = {}
-        hash_files = {"style.css", "app.js", "similarity-web.js"}
+        hash_files = {"style.css", "app.js", "similarity-web.js", "claim-graph.js"}
 
         if not self.static_dir.exists():
             return

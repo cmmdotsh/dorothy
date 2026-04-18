@@ -84,6 +84,10 @@ SYNTHESIS_MAPPING = {
                 },
             },
             "review_improvements": {"type": "keyword"},
+            "claim_graph": {
+                "type": "object",
+                "enabled": False,
+            },
         }
     },
 }
@@ -541,6 +545,9 @@ class OpenSearchClient:
             "median_pub_date": synthesis.get("median_pub_date"),
             "first_pub_date": synthesis.get("first_pub_date"),
             "last_pub_date": synthesis.get("last_pub_date"),
+            "quality_scores": synthesis.get("quality_scores"),
+            "review_improvements": synthesis.get("review_improvements"),
+            "claim_graph": synthesis.get("claim_graph"),
         }
 
         try:
@@ -588,6 +595,9 @@ class OpenSearchClient:
                 "median_pub_date": synthesis.get("median_pub_date"),
                 "first_pub_date": synthesis.get("first_pub_date"),
                 "last_pub_date": synthesis.get("last_pub_date"),
+                "quality_scores": synthesis.get("quality_scores"),
+                "review_improvements": synthesis.get("review_improvements"),
+                "claim_graph": synthesis.get("claim_graph"),
             }
             actions.append({
                 "_index": SYNTHESIS_INDEX,

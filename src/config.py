@@ -62,22 +62,8 @@ class LLMSettings(BaseSettings):
     temperature: float = 0.3
     max_tokens: int = 4096
     context_length: int = 32768
-
     class Config:
         env_prefix = "LLM_"
-
-
-class ReviewerSettings(BaseSettings):
-    """Quality reviewer settings (via LMStudio)."""
-
-    base_url: str = "http://192.168.0.149:1234"
-    model: str = "google/gemma-4-26b-a4b"
-    temperature: float = 0.3
-    max_tokens: int = 4096
-    enabled: bool = True
-
-    class Config:
-        env_prefix = "REVIEWER_"
 
 
 class ExtractorSettings(BaseSettings):
@@ -98,7 +84,7 @@ class ClaimGraphSettings(BaseSettings):
     enabled: bool = True
     similarity_threshold: float = 0.85
     min_sources_corroborated: int = 2
-    embedding_concurrency: int = 8
+    embedding_concurrency: int = 32
     min_chunk_chars: int = 80
     max_chunk_chars: int = 800
 
@@ -136,7 +122,6 @@ class DorothyConfig:
         self.scheduler = SchedulerSettings()
         self.embedding = EmbeddingSettings()
         self.llm = LLMSettings()
-        self.reviewer = ReviewerSettings()
         self.extractor = ExtractorSettings()
         self.claim_graph = ClaimGraphSettings()
         self.podcast = PodcastSettings()
