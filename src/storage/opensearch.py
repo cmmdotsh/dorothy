@@ -545,8 +545,6 @@ class OpenSearchClient:
             "median_pub_date": synthesis.get("median_pub_date"),
             "first_pub_date": synthesis.get("first_pub_date"),
             "last_pub_date": synthesis.get("last_pub_date"),
-            "quality_scores": synthesis.get("quality_scores"),
-            "review_improvements": synthesis.get("review_improvements"),
             "claim_graph": synthesis.get("claim_graph"),
         }
 
@@ -595,8 +593,6 @@ class OpenSearchClient:
                 "median_pub_date": synthesis.get("median_pub_date"),
                 "first_pub_date": synthesis.get("first_pub_date"),
                 "last_pub_date": synthesis.get("last_pub_date"),
-                "quality_scores": synthesis.get("quality_scores"),
-                "review_improvements": synthesis.get("review_improvements"),
                 "claim_graph": synthesis.get("claim_graph"),
             }
             actions.append({
