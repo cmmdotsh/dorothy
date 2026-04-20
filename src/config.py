@@ -72,7 +72,8 @@ class ExtractorSettings(BaseSettings):
     enabled: bool = True
     timeout: float = 30.0
     delay: float = 1.0
-    batch_size: int = 50
+    batch_size: int = 500
+    max_workers: int = 10
 
     class Config:
         env_prefix = "EXTRACTOR_"

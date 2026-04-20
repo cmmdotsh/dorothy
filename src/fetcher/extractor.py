@@ -1,7 +1,14 @@
-"""Full article text extraction via trafilatura (HTML -> Markdown)."""
+"""Full article text extraction via trafilatura (HTML -> Markdown).
+
+Supports parallel extraction across domains — one request per domain
+at a time, but many domains concurrently.
+"""
 
 import time
+from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Optional
+from urllib.parse import urlparse
 
 import httpx
 import structlog
@@ -22,12 +29,7 @@ _BROWSER_HEADERS = {
 
 
 def _resolve_google_news_url(url: str) -> Optional[str]:
-    """Resolve a Google News redirect URL to the real article URL.
-
-    Google News RSS feeds use opaque redirect URLs that encode the real
-    destination. Uses googlenewsdecoder to extract the actual article URL.
-    Returns None if resolution fails (expired link, rate limited, etc).
-    """
+    """Resolve a Google News redirect URL to the real article URL."""
     try:
         from googlenewsdecoder.new_decoderv1 import decode_google_news_url
 
@@ -54,31 +56,32 @@ def _resolve_google_news_url(url: str) -> Optional[str]:
 
 
 class ArticleExtractor:
-    """Extracts full article body text from URLs and stores as Markdown."""
+    """Extracts full article body text from URLs and stores as Markdown.
+
+    Supports parallel extraction: groups articles by domain, then runs
+    one worker per domain concurrently. Each worker processes its domain's
+    articles sequentially with a polite delay between requests.
+    """
 
     def __init__(
         self,
         timeout: float = 30.0,
         delay: float = 1.0,
+        max_workers: int = 10,
     ):
         self.timeout = timeout
         self.delay = delay
-        self._client: Optional[httpx.Client] = None
+        self.max_workers = max_workers
 
-    @property
-    def client(self) -> httpx.Client:
-        if self._client is None:
-            self._client = httpx.Client(
-                headers=_BROWSER_HEADERS,
-                follow_redirects=True,
-                timeout=self.timeout,
-            )
-        return self._client
+    def _make_client(self) -> httpx.Client:
+        return httpx.Client(
+            headers=_BROWSER_HEADERS,
+            follow_redirects=True,
+            timeout=self.timeout,
+        )
 
     def close(self) -> None:
-        if self._client:
-            self._client.close()
-            self._client = None
+        pass  # clients are now per-thread
 
     def _resolve_url(self, url: str) -> str:
         """Resolve redirects (Google News, etc) to the real article URL."""
@@ -88,19 +91,28 @@ class ArticleExtractor:
                 return resolved
         return url
 
-    def extract(self, url: str) -> Optional[str]:
-        """Fetch a URL and extract article body as Markdown.
+    def _get_domain(self, url: str) -> str:
+        """Extract domain from URL for grouping."""
+        try:
+            parsed = urlparse(self._resolve_url(url))
+            return parsed.netloc or "unknown"
+        except Exception:
+            return "unknown"
 
-        Uses httpx with browser headers to avoid bot blocking, then
-        trafilatura for content extraction. Resolves Google News
-        redirects before fetching.
+    def extract(self, url: str, client: Optional[httpx.Client] = None) -> Optional[str]:
+        """Fetch a URL and extract article body as Markdown.
 
         Returns Markdown text on success, None on failure.
         """
+        own_client = False
+        if client is None:
+            client = self._make_client()
+            own_client = True
+
         try:
             fetch_url = self._resolve_url(url)
 
-            response = self.client.get(fetch_url)
+            response = client.get(fetch_url)
             if response.status_code != 200:
                 logger.debug(
                     "extractor_http_error",
@@ -131,6 +143,50 @@ class ArticleExtractor:
         except Exception as e:
             logger.warning("extractor_error", url=url[:100], error=str(e))
             return None
+        finally:
+            if own_client:
+                client.close()
+
+    def _extract_domain_batch(
+        self,
+        domain: str,
+        articles: list[dict],
+        os_client: OpenSearchClient,
+        index_name: Optional[str],
+    ) -> dict:
+        """Extract articles for a single domain sequentially with delay."""
+        stats = {"processed": 0, "success": 0, "failed": 0}
+        client = self._make_client()
+
+        try:
+            for article in articles:
+                article_id = article["id"]
+                url = article["url"]
+                source = article.get("source_name", "unknown")
+
+                body = self.extract(url, client=client)
+
+                if body:
+                    os_client.update_article_body(article_id, body, index_name)
+                    stats["success"] += 1
+                    logger.debug(
+                        "body_extracted",
+                        source=source,
+                        url=url[:80],
+                        body_length=len(body),
+                    )
+                else:
+                    os_client.mark_body_extraction_failed(article_id, index_name)
+                    stats["failed"] += 1
+
+                stats["processed"] += 1
+
+                if self.delay > 0 and stats["processed"] < len(articles):
+                    time.sleep(self.delay)
+        finally:
+            client.close()
+
+        return stats
 
     def extract_batch(
         self,
@@ -138,36 +194,51 @@ class ArticleExtractor:
         os_client: OpenSearchClient,
         index_name: Optional[str] = None,
     ) -> dict:
-        """Extract body text for a batch of articles, updating OpenSearch.
+        """Extract body text for a batch of articles, parallelized by domain.
+
+        Groups articles by domain, then runs one worker per domain
+        concurrently. Polite per-domain (sequential with delay), fast
+        overall (many domains at once).
 
         Returns stats dict with counts of processed, success, failed.
         """
-        stats = {"processed": 0, "success": 0, "failed": 0}
-
+        # Group by domain
+        by_domain: dict[str, list[dict]] = defaultdict(list)
         for article in articles:
-            article_id = article["id"]
-            url = article["url"]
-            source = article.get("source_name", "unknown")
+            domain = self._get_domain(article["url"])
+            by_domain[domain].append(article)
 
-            body = self.extract(url)
+        logger.info(
+            "extraction_parallel_start",
+            articles=len(articles),
+            domains=len(by_domain),
+            workers=min(self.max_workers, len(by_domain)),
+        )
 
-            if body:
-                os_client.update_article_body(article_id, body, index_name)
-                stats["success"] += 1
-                logger.debug(
-                    "body_extracted",
-                    source=source,
-                    url=url[:80],
-                    body_length=len(body),
-                )
-            else:
-                os_client.mark_body_extraction_failed(article_id, index_name)
-                stats["failed"] += 1
+        total_stats = {"processed": 0, "success": 0, "failed": 0}
 
-            stats["processed"] += 1
+        with ThreadPoolExecutor(max_workers=min(self.max_workers, len(by_domain))) as pool:
+            futures = {
+                pool.submit(
+                    self._extract_domain_batch, domain, domain_articles, os_client, index_name,
+                ): domain
+                for domain, domain_articles in by_domain.items()
+            }
 
-            if self.delay > 0 and stats["processed"] < len(articles):
-                time.sleep(self.delay)
+            for future in as_completed(futures):
+                domain = futures[future]
+                try:
+                    stats = future.result()
+                    total_stats["processed"] += stats["processed"]
+                    total_stats["success"] += stats["success"]
+                    total_stats["failed"] += stats["failed"]
+                    logger.info(
+                        "domain_extraction_complete",
+                        domain=domain,
+                        **stats,
+                    )
+                except Exception as e:
+                    logger.error("domain_extraction_error", domain=domain, error=str(e))
 
-        logger.info("extraction_batch_complete", **stats)
-        return stats
+        logger.info("extraction_batch_complete", **total_stats)
+        return total_stats

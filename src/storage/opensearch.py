@@ -344,7 +344,7 @@ class OpenSearchClient:
             },
             "size": size,
             "sort": [{"pub_date": {"order": "desc"}}],
-            "_source": ["id", "url", "headline", "source_name"],
+            "_source": ["id", "url", "headline", "source_name", "source_slug"],
         }
 
         try:

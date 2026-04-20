@@ -90,25 +90,38 @@ def run_fetch(os_client: OpenSearchClient, embed_client: Optional[EmbeddingClien
 
 
 def run_extraction(os_client: OpenSearchClient) -> int:
-    """Extract full article body text for articles missing it. Returns count processed."""
+    """Extract full article body text for all articles missing it. Returns total processed."""
     if not config.extractor.enabled:
         return 0
 
     index_name = os_client.get_current_index_name()
-    articles = os_client.get_articles_without_body(
-        size=config.extractor.batch_size,
-        index_name=index_name,
-    )
-
-    if not articles:
-        return 0
-
     extractor = ArticleExtractor(
         timeout=config.extractor.timeout,
         delay=config.extractor.delay,
+        max_workers=config.extractor.max_workers,
     )
-    stats = extractor.extract_batch(articles, os_client, index_name)
-    return stats["processed"]
+
+    total_processed = 0
+    batch_size = config.extractor.batch_size
+
+    while True:
+        articles = os_client.get_articles_without_body(
+            size=batch_size,
+            index_name=index_name,
+        )
+
+        if not articles:
+            break
+
+        stats = extractor.extract_batch(articles, os_client, index_name)
+        total_processed += stats["processed"]
+
+        console.print(f"[dim]    Extracted {stats['success']}/{stats['processed']} (total: {total_processed})[/dim]")
+
+        if stats["processed"] < batch_size:
+            break
+
+    return total_processed
 
 
 def run_embeddings(os_client: OpenSearchClient) -> int:
