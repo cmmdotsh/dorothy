@@ -151,13 +151,12 @@ def _utcnow() -> datetime:
 
 @dataclass
 class SynthesizedStory:
-    """A story with LLM-generated article and coverage analysis."""
+    """A story assembled from extracted source passages."""
 
     story_id: str
     original_headline: str
     generated_headline: str
     article: str
-    analysis: str
     sources_used: list[str] = field(default_factory=list)
     bias_coverage: dict[str, int] = field(default_factory=dict)
     article_count: int = 0
@@ -173,14 +172,7 @@ class SynthesizedStory:
     median_pub_date: Optional[str] = None
     first_pub_date: Optional[str] = None
     last_pub_date: Optional[str] = None
-    quality_scores: Optional[dict[str, float]] = None
-    review_improvements: Optional[list[str]] = None
-    claim_graph: Optional[dict] = None
-
-    @property
-    def summary(self) -> str:
-        """Backward-compat alias: returns the article text."""
-        return self.article
+    claim_graph: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         """Convert to dictionary."""
@@ -189,7 +181,6 @@ class SynthesizedStory:
             "original_headline": self.original_headline,
             "generated_headline": self.generated_headline,
             "article": self.article,
-            "analysis": self.analysis,
             "sources_used": self.sources_used,
             "bias_coverage": self.bias_coverage,
             "article_count": self.article_count,
@@ -205,30 +196,8 @@ class SynthesizedStory:
             "median_pub_date": self.median_pub_date,
             "first_pub_date": self.first_pub_date,
             "last_pub_date": self.last_pub_date,
-            "quality_scores": self.quality_scores,
-            "review_improvements": self.review_improvements,
             "claim_graph": self.claim_graph,
         }
-
-    def to_markdown(self) -> str:
-        """Format as markdown."""
-        bias_str = ", ".join(f"{k}: {v}" for k, v in self.bias_coverage.items())
-        sources_str = ", ".join(self.sources_used[:10])
-        if len(self.sources_used) > 10:
-            sources_str += f" (+{len(self.sources_used) - 10} more)"
-
-        return f"""## {self.generated_headline}
-
-{self.article}
-
-### Coverage Analysis
-{self.analysis}
-
----
-**Sources:** {sources_str}
-**Bias Coverage:** {bias_str}
-**Articles:** {self.article_count}
-"""
 
 
 @dataclass
