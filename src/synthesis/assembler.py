@@ -22,7 +22,8 @@ def assemble_article(claim_graph: dict, ordering: dict) -> str:
     paragraphs = []
 
     for entry in order:
-        idx = entry.get("cluster", -1)
+        # Models may return "cluster", "fact_id", "fact", or "index"
+        idx = entry.get("cluster", entry.get("fact_id", entry.get("fact", entry.get("index", -1))))
         transition = entry.get("transition", "")
 
         if idx < 0 or idx >= len(clusters):
@@ -56,8 +57,8 @@ def assemble_article(claim_graph: dict, ordering: dict) -> str:
                 by_source[name] = []
             by_source[name].append(detail["text"])
 
+        # Cap at first passage per source to keep the section concise
         for source_name, texts in by_source.items():
-            for text in texts:
-                paragraphs.append("*" + source_name + "* — " + text)
+            paragraphs.append("*" + source_name + "* — " + texts[0])
 
     return "\n\n".join(paragraphs)
