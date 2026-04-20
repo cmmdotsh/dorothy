@@ -82,7 +82,7 @@ class ClaimGraphSettings(BaseSettings):
     """Claim graph analysis settings."""
 
     enabled: bool = True
-    similarity_threshold: float = 0.85
+    similarity_threshold: float = 0.75
     min_sources_corroborated: int = 2
     embedding_concurrency: int = 32
     min_chunk_chars: int = 80

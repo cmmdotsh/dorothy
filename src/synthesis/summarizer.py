@@ -265,8 +265,12 @@ class StorySummarizer:
         self, story: Story, claim_graph: ClaimGraph,
     ) -> Optional[SynthesizedStory]:
         """Synthesize a story using extractive assembly."""
-        if not claim_graph or not claim_graph.corroborated:
-            logger.info("skipping_no_corroborated_facts", story_id=story.id)
+        if not claim_graph or len(claim_graph.corroborated) < 3:
+            logger.info(
+                "skipping_insufficient_corroborated_facts",
+                story_id=story.id,
+                corroborated=len(claim_graph.corroborated) if claim_graph else 0,
+            )
             return None
 
         articles_with_body = [a for a in story.articles if a.get("body")]
