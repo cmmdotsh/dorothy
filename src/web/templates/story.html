@@ -37,17 +37,15 @@
 
     <div class="story-tabs">
         <input type="radio" name="story-tab" id="tab-article" class="tab-radio" checked>
-        <input type="radio" name="story-tab" id="tab-analysis" class="tab-radio">
         {% if story.claim_graph and story.claim_graph.corroborated %}
-        <input type="radio" name="story-tab" id="tab-claims" class="tab-radio">
+        <input type="radio" name="story-tab" id="tab-evidence" class="tab-radio">
         {% endif %}
         <input type="radio" name="story-tab" id="tab-sources" class="tab-radio">
 
         <nav class="tab-bar">
             <label for="tab-article" class="tab-label">Article</label>
-            <label for="tab-analysis" class="tab-label">Analysis</label>
             {% if story.claim_graph and story.claim_graph.corroborated %}
-            <label for="tab-claims" class="tab-label">Claims</label>
+            <label for="tab-evidence" class="tab-label">Evidence</label>
             {% endif %}
             <label for="tab-sources" class="tab-label">Sources</label>
         </nav>
@@ -68,15 +66,14 @@
             {% endif %}
         </div>
 
-        <div class="tab-panel" id="panel-analysis">
-            {% if story.analysis %}
-            <section class="story-content coverage-analysis">
-                <h3>Coverage Analysis</h3>
-                <div class="analysis-text">
-                    {{ story.analysis|markdown }}
-                </div>
+        {% if story.claim_graph and story.claim_graph.corroborated %}
+        <div class="tab-panel" id="panel-evidence">
+            <section class="claim-graph-section">
+                <h3>Fact Corroboration</h3>
+                <p class="claim-graph-caption">Which sources independently confirm the same facts. Hover a claim to see its sources, or a source to see what it corroborates.</p>
+                <div id="claim-graph"></div>
+                <script id="claim-graph-data" type="application/json">{{ story.claim_graph|tojson }}</script>
             </section>
-            {% endif %}
 
             {% if story.bias_coverage %}
             <section class="bias-section">
@@ -128,16 +125,6 @@
                 {% endif %}
             </section>
             {% endif %}
-        </div>
-
-        {% if story.claim_graph and story.claim_graph.corroborated %}
-        <div class="tab-panel" id="panel-claims">
-            <section class="claim-graph-section">
-                <h3>Fact Corroboration</h3>
-                <p class="claim-graph-caption">Which sources independently confirm the same facts. Hover a claim to see its sources, or a source to see what it corroborates.</p>
-                <div id="claim-graph"></div>
-                <script id="claim-graph-data" type="application/json">{{ story.claim_graph|tojson }}</script>
-            </section>
         </div>
         {% endif %}
 

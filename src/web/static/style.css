@@ -965,8 +965,7 @@ time.timeago-full {
 
 /* Active tab highlighting via :checked sibling selectors */
 #tab-article:checked ~ .tab-bar label[for="tab-article"],
-#tab-analysis:checked ~ .tab-bar label[for="tab-analysis"],
-#tab-claims:checked ~ .tab-bar label[for="tab-claims"],
+#tab-evidence:checked ~ .tab-bar label[for="tab-evidence"],
 #tab-sources:checked ~ .tab-bar label[for="tab-sources"] {
     color: var(--text-primary);
     border-bottom-color: var(--text-primary);
@@ -978,8 +977,7 @@ time.timeago-full {
 }
 
 #tab-article:checked ~ #panel-article,
-#tab-analysis:checked ~ #panel-analysis,
-#tab-claims:checked ~ #panel-claims,
+#tab-evidence:checked ~ #panel-evidence,
 #tab-sources:checked ~ #panel-sources {
     display: block;
 }
