@@ -149,17 +149,16 @@ def _write_story(
     summarizer: StorySummarizer,
     story,
     edition: int,
-    graph_builder: Optional[ClaimGraphBuilder],
+    graph_builder: ClaimGraphBuilder,
 ):
-    """Write a single story (no review). Returns (synthesized, story) or (None, story)."""
-    claim_graph = None
-    if graph_builder:
-        try:
-            claim_graph = graph_builder.build(story)
-        except Exception as e:
-            logger.warning("claim_graph_failed", story_id=story.id, error=str(e))
+    """Build claim graph and synthesize a single story."""
+    try:
+        claim_graph = graph_builder.build(story)
+    except Exception as e:
+        logger.warning("claim_graph_failed", story_id=story.id, error=str(e))
+        return None, story
 
-    synthesized = summarizer.synthesize(story, claim_graph=claim_graph)
+    synthesized = summarizer.synthesize(story, claim_graph)
     if not synthesized:
         return None, story
 
@@ -173,7 +172,7 @@ def run_synthesis(
     column: str,
     edition: int = 1,
     limit: Optional[int] = None,
-    graph_builder: Optional[ClaimGraphBuilder] = None,
+    graph_builder: ClaimGraphBuilder = None,
 ) -> int:
     """Synthesize stories for a column with deduplication. Returns count of stories synthesized."""
     try:
@@ -420,19 +419,16 @@ def run_pipeline_cycle(
     console.print(f"[dim]  Edition: {edition}[/dim]")
     synthesis_counts = {}
 
-    # Build claim graph builder if enabled
-    graph_builder = None
-    if config.claim_graph.enabled:
-        graph_builder = ClaimGraphBuilder(
-            base_url=config.embedding.base_url,
-            model=config.embedding.model,
-            similarity_threshold=config.claim_graph.similarity_threshold,
-            min_sources_corroborated=config.claim_graph.min_sources_corroborated,
-            embedding_concurrency=config.claim_graph.embedding_concurrency,
-            min_chunk_chars=config.claim_graph.min_chunk_chars,
-            max_chunk_chars=config.claim_graph.max_chunk_chars,
-        )
-        console.print(f"[dim]  Claim graph: enabled (threshold={config.claim_graph.similarity_threshold})[/dim]")
+    # Build claim graph builder (required for extractive synthesis)
+    graph_builder = ClaimGraphBuilder(
+        base_url=config.embedding.base_url,
+        model=config.embedding.model,
+        similarity_threshold=config.claim_graph.similarity_threshold,
+        min_sources_corroborated=config.claim_graph.min_sources_corroborated,
+        embedding_concurrency=config.claim_graph.embedding_concurrency,
+        min_chunk_chars=config.claim_graph.min_chunk_chars,
+        max_chunk_chars=config.claim_graph.max_chunk_chars,
+    )
 
     for column in COLUMNS:
         console.print(f"  [dim]{column}...[/dim]", end=" ")
