@@ -111,8 +111,36 @@ def chunk_article(
 
 
 def chunk_story(articles: list[dict], **kwargs) -> list[Chunk]:
-    """Chunk all articles in a story cluster."""
+    """Chunk all articles in a story cluster.
+
+    Filters out chunks that have no topical relevance to the story
+    (e.g. sidebar content, related stories, navigation text).
+    """
+    # Build keyword set from all headlines in the cluster
+    stop_words = {
+        'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for',
+        'of', 'with', 'by', 'from', 'is', 'are', 'was', 'were', 'be', 'been',
+        'has', 'have', 'had', 'do', 'does', 'did', 'will', 'would', 'could',
+        'should', 'may', 'might', 'can', 'not', 'no', 'it', 'its', 'this',
+        'that', 'these', 'those', 'he', 'she', 'they', 'we', 'his', 'her',
+        'their', 'our', 'my', 'your', 'who', 'what', 'when', 'where', 'how',
+        'why', 'all', 'each', 'every', 'both', 'few', 'more', 'most', 'other',
+        'some', 'such', 'than', 'too', 'very', 'just', 'about', 'after',
+        'before', 'between', 'during', 'into', 'through', 'over', 'under',
+        'up', 'out', 'off', 'down', 'then', 'once', 'here', 'there', 'also',
+        'new', 'says', 'said', 'say', 'news', 'report', 'reports', 'reported',
+    }
+    headline_words = set()
+    for a in articles:
+        words = re.findall(r'[a-z]+', a.get('headline', '').lower())
+        headline_words.update(w for w in words if w not in stop_words and len(w) > 2)
+
     chunks: list[Chunk] = []
     for article in articles:
-        chunks.extend(chunk_article(article, **kwargs))
+        for chunk in chunk_article(article, **kwargs):
+            # Check topical relevance: chunk must share at least 2 keywords with headlines
+            chunk_words = set(re.findall(r'[a-z]+', chunk.text.lower()))
+            overlap = chunk_words & headline_words
+            if len(overlap) >= 2:
+                chunks.append(chunk)
     return chunks

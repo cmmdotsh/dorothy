@@ -124,10 +124,11 @@ class ArticleExtractor:
             body = trafilatura.extract(
                 response.text,
                 output_format="markdown",
-                favor_recall=True,
+                favor_precision=True,
                 include_links=False,
                 include_images=False,
                 include_comments=False,
+                include_tables=False,
             )
 
             if not body or len(body.strip()) < 50:
