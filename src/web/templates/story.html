@@ -51,34 +51,20 @@
         </nav>
 
         <div class="tab-panel" id="panel-article">
-            {% if story.claim_graph and story.claim_graph.article_blocks %}
+            {% if story.claim_graph and story.claim_graph.corroborated %}
             <section class="story-content">
                 <div class="extractive-article">
-                    {% set facts = story.claim_graph.article_blocks|selectattr('type', 'equalto', 'fact')|list %}
-                    {% set uniques = story.claim_graph.article_blocks|selectattr('type', 'equalto', 'unique')|list %}
-
-                    {% for block in facts %}
+                    {% for cluster in story.claim_graph.corroborated %}
                     <div class="ex-fact">
-                        {% if block.transition %}
-                        <p class="ex-transition">{{ block.transition }}</p>
-                        {% endif %}
-                        <blockquote class="ex-passage">
-                            <p>{{ block.passage }}</p>
-                            <cite class="ex-cite">
-                                <span class="ex-source-name">{{ block.attribution }}</span>
-                                {% if block.source_count > 1 %}
-                                <span class="ex-corroboration">Confirmed by {{ block.source_count }} sources</span>
-                                {% endif %}
-                            </cite>
-                        </blockquote>
-                        {% if block.other_versions %}
+                        <p class="ex-passage-text">{{ cluster.sources[0].text }}<sup class="ex-ref">{{ loop.index }}</sup></p>
+                        {% if cluster.sources|length > 1 %}
                         <details class="ex-versions">
-                            <summary>{{ block.other_versions|length }} other source{{ 's' if block.other_versions|length != 1 }}</summary>
+                            <summary>{{ cluster.sources|length - 1 }} other source{{ 's' if cluster.sources|length - 1 != 1 }}</summary>
                             <div class="ex-versions-list">
-                                {% for ver in block.other_versions %}
+                                {% for src in cluster.sources[1:] %}
                                 <div class="ex-version">
-                                    <span class="bias-pill small" style="background: {{ bias_colors.get(ver.source_bias, '#888') }}">{{ ver.source_name }}</span>
-                                    <p>{{ ver.text }}</p>
+                                    <span class="bias-pill small" style="background: {{ bias_colors.get(src.source_bias, '#888') }}">{{ src.source_name }}</span>
+                                    <p>{{ src.text }}</p>
                                 </div>
                                 {% endfor %}
                             </div>
@@ -87,14 +73,32 @@
                     </div>
                     {% endfor %}
 
-                    {% if uniques %}
+                    <footer class="ex-citations">
+                        <h4 class="ex-citations-heading">Sources</h4>
+                        <ol class="ex-citation-list">
+                            {% for cluster in story.claim_graph.corroborated %}
+                            <li>
+                                <span class="ex-citation-source">{{ cluster.sources[0].source_name }}</span>
+                                {% if cluster.source_count > 1 %}
+                                <span class="ex-citation-also">also: {{ cluster.source_names[1:]|join(', ') }}</span>
+                                {% endif %}
+                            </li>
+                            {% endfor %}
+                        </ol>
+                    </footer>
+
+                    {% if story.claim_graph.unique_details %}
                     <aside class="ex-unique-section">
                         <h4 class="ex-unique-heading">Single-Source Reports</h4>
-                        {% for block in uniques %}
+                        {% set seen_sources = [] %}
+                        {% for detail in story.claim_graph.unique_details %}
+                        {% if detail.source_name not in seen_sources %}
+                        {% if seen_sources.append(detail.source_name) %}{% endif %}
                         <div class="ex-unique">
-                            <span class="bias-pill small" style="background: {{ bias_colors.get(block.source_bias, '#888') }}">{{ block.attribution }}</span>
-                            <p>{{ block.passage }}</p>
+                            <span class="bias-pill small" style="background: {{ bias_colors.get(detail.source_bias, '#888') }}">{{ detail.source_name }}</span>
+                            <p>{{ detail.text }}</p>
                         </div>
+                        {% endif %}
                         {% endfor %}
                     </aside>
                     {% endif %}

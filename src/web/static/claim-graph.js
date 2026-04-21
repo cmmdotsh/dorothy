@@ -145,7 +145,7 @@
     .force("center", d3.forceCenter(width / 2, height / 2))
     .force(
       "collide",
-      d3.forceCollide().radius((d) => (d.type === "claim" ? 50 : 20))
+      d3.forceCollide().radius((d) => (d.type === "claim" ? 50 : 22))
     )
     .force(
       "x",
@@ -251,7 +251,7 @@
   // Source circle
   sourceNodes
     .append("circle")
-    .attr("r", (d) => 6 + d.claimCount * 2.5)
+    .attr("r", (d) => Math.min(6 + d.claimCount * 2.5, 18))
     .attr("fill", (d) => biasColor(d.bias))
     .attr("stroke", isDark() ? "#242424" : "#fff")
     .attr("stroke-width", 2);
