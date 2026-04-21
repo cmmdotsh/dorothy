@@ -8,12 +8,8 @@ logger = structlog.get_logger(__name__)
 def assemble_article(claim_graph: dict, ordering: dict) -> str:
     """Assemble an extractive article from claim graph data and LLM ordering.
 
-    Args:
-        claim_graph: The claim graph viz dict with 'corroborated' and 'unique_details'.
-        ordering: LLM output with 'ordering' list of {cluster, transition} dicts.
-
-    Returns:
-        Assembled article text with attributed passages.
+    Returns assembled article as markdown text for storage. The template
+    also has access to claim_graph directly for richer rendering.
     """
     clusters = claim_graph.get("corroborated", [])
     unique_details = claim_graph.get("unique_details", [])
@@ -22,7 +18,6 @@ def assemble_article(claim_graph: dict, ordering: dict) -> str:
     paragraphs = []
 
     for entry in order:
-        # Models may return "cluster", "fact_id", "fact", or "index"
         idx = entry.get("cluster", entry.get("fact_id", entry.get("fact", entry.get("index", -1))))
         transition = entry.get("transition", "")
 
@@ -37,19 +32,12 @@ def assemble_article(claim_graph: dict, ordering: dict) -> str:
 
         passage = sources[0]["text"]
         attribution = sources[0]["source_name"]
-        corroboration = ", ".join(cluster.get("source_names", []))
 
-        block = ""
         if transition:
-            block += transition + "\n\n"
-        block += passage + " *(" + attribution + ")*"
-        if cluster.get("source_count", 0) > 1:
-            block += "\n*Corroborated by: " + corroboration + "*"
-
-        paragraphs.append(block)
+            paragraphs.append(transition)
+        paragraphs.append(passage + " — *" + attribution + "*")
 
     if unique_details:
-        paragraphs.append("---\n\n**Reported by single sources:**")
         by_source = {}
         for detail in unique_details:
             name = detail.get("source_name", "Unknown")
@@ -57,8 +45,83 @@ def assemble_article(claim_graph: dict, ordering: dict) -> str:
                 by_source[name] = []
             by_source[name].append(detail["text"])
 
-        # Cap at first passage per source to keep the section concise
         for source_name, texts in by_source.items():
             paragraphs.append("*" + source_name + "* — " + texts[0])
 
     return "\n\n".join(paragraphs)
+
+
+def build_article_blocks(claim_graph: dict, ordering: dict) -> list[dict]:
+    """Build structured article blocks for template rendering.
+
+    Returns a list of block dicts, each with:
+      - type: "fact" or "unique"
+      - transition: optional transition sentence (facts only)
+      - passage: the source text
+      - attribution: source name
+      - source_bias: bias rating of the attributed source
+      - corroborated_by: list of source names that confirm this fact
+      - source_count: number of confirming sources
+      - similarity: avg similarity score
+      - other_versions: list of {source_name, source_bias, text} from other sources
+    """
+    clusters = claim_graph.get("corroborated", [])
+    unique_details = claim_graph.get("unique_details", [])
+    order = ordering.get("ordering", [])
+
+    blocks = []
+
+    for entry in order:
+        idx = entry.get("cluster", entry.get("fact_id", entry.get("fact", entry.get("index", -1))))
+        transition = entry.get("transition", "")
+
+        if idx < 0 or idx >= len(clusters):
+            continue
+
+        cluster = clusters[idx]
+        sources = cluster.get("sources", [])
+        if not sources:
+            continue
+
+        other_versions = []
+        for src in sources[1:]:
+            other_versions.append({
+                "source_name": src["source_name"],
+                "source_bias": src.get("source_bias", ""),
+                "text": src["text"],
+            })
+
+        blocks.append({
+            "type": "fact",
+            "transition": transition,
+            "passage": sources[0]["text"],
+            "attribution": sources[0]["source_name"],
+            "source_bias": sources[0].get("source_bias", ""),
+            "corroborated_by": cluster.get("source_names", []),
+            "source_count": cluster.get("source_count", 1),
+            "similarity": cluster.get("avg_similarity", 0),
+            "other_versions": other_versions,
+        })
+
+    # Group unique details by source
+    if unique_details:
+        by_source = {}
+        for detail in unique_details:
+            name = detail.get("source_name", "Unknown")
+            if name not in by_source:
+                by_source[name] = {
+                    "source_bias": detail.get("source_bias", ""),
+                    "texts": [],
+                }
+            by_source[name]["texts"].append(detail["text"])
+
+        for source_name, info in by_source.items():
+            blocks.append({
+                "type": "unique",
+                "passage": info["texts"][0],
+                "attribution": source_name,
+                "source_bias": info["source_bias"],
+                "extra_count": len(info["texts"]) - 1,
+            })
+
+    return blocks

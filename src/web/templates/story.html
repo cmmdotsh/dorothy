@@ -51,16 +51,59 @@
         </nav>
 
         <div class="tab-panel" id="panel-article">
-            {% if story.article %}
+            {% if story.claim_graph and story.claim_graph.article_blocks %}
+            <section class="story-content">
+                <div class="extractive-article">
+                    {% set facts = story.claim_graph.article_blocks|selectattr('type', 'equalto', 'fact')|list %}
+                    {% set uniques = story.claim_graph.article_blocks|selectattr('type', 'equalto', 'unique')|list %}
+
+                    {% for block in facts %}
+                    <div class="ex-fact">
+                        {% if block.transition %}
+                        <p class="ex-transition">{{ block.transition }}</p>
+                        {% endif %}
+                        <blockquote class="ex-passage">
+                            <p>{{ block.passage }}</p>
+                            <cite class="ex-cite">
+                                <span class="ex-source-name">{{ block.attribution }}</span>
+                                {% if block.source_count > 1 %}
+                                <span class="ex-corroboration">Confirmed by {{ block.source_count }} sources</span>
+                                {% endif %}
+                            </cite>
+                        </blockquote>
+                        {% if block.other_versions %}
+                        <details class="ex-versions">
+                            <summary>{{ block.other_versions|length }} other source{{ 's' if block.other_versions|length != 1 }}</summary>
+                            <div class="ex-versions-list">
+                                {% for ver in block.other_versions %}
+                                <div class="ex-version">
+                                    <span class="bias-pill small" style="background: {{ bias_colors.get(ver.source_bias, '#888') }}">{{ ver.source_name }}</span>
+                                    <p>{{ ver.text }}</p>
+                                </div>
+                                {% endfor %}
+                            </div>
+                        </details>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+
+                    {% if uniques %}
+                    <aside class="ex-unique-section">
+                        <h4 class="ex-unique-heading">Single-Source Reports</h4>
+                        {% for block in uniques %}
+                        <div class="ex-unique">
+                            <span class="bias-pill small" style="background: {{ bias_colors.get(block.source_bias, '#888') }}">{{ block.attribution }}</span>
+                            <p>{{ block.passage }}</p>
+                        </div>
+                        {% endfor %}
+                    </aside>
+                    {% endif %}
+                </div>
+            </section>
+            {% elif story.article %}
             <section class="story-content">
                 <div class="article-text">
                     {{ story.article|markdown }}
-                </div>
-            </section>
-            {% elif story.summary %}
-            <section class="story-content">
-                <div class="article-text">
-                    {{ story.summary|markdown }}
                 </div>
             </section>
             {% endif %}

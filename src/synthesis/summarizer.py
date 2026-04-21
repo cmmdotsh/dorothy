@@ -13,7 +13,7 @@ import structlog
 
 from src.claim_graph.models import ClaimGraph
 from src.clustering import Story
-from src.synthesis.assembler import assemble_article
+from src.synthesis.assembler import assemble_article, build_article_blocks
 from src.synthesis.json_utils import parse_llm_json
 from src.synthesis.llm_client import LLMClient, LLMError
 
@@ -315,6 +315,7 @@ class StorySummarizer:
 
             viz_dict = claim_graph.to_viz_dict()
             article = assemble_article(viz_dict, ordering)
+            viz_dict["article_blocks"] = build_article_blocks(viz_dict, ordering)
 
             if not article or len(article.split()) < 20:
                 logger.warning("degenerate_article", story_id=story.id)

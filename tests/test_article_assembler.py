@@ -48,10 +48,10 @@ def test_assemble_basic_ordering():
 
     article = assemble_article(graph, ordering)
     assert article.startswith("President signed the bill Tuesday.")
-    assert "(AP)" in article
+    assert "— *AP*" in article
     assert "The decision drew mixed reactions." in article
     assert "Democrats in the Senate objected." in article
-    assert "(NYT)" in article
+    assert "— *NYT*" in article
 
 
 def test_assemble_with_unique_details():
