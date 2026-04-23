@@ -24,6 +24,7 @@ from rich.panel import Panel
 
 from src.config import config
 from src.fetcher import fetch_all_sources
+from src.fetcher.extractor import ArticleExtractor
 from src.models import Article
 from src.storage import OpenSearchClient
 from src.clustering import StoryGrouper
@@ -121,6 +122,47 @@ def run_embeddings(os_client: OpenSearchClient) -> int:
         return total_processed
     finally:
         embed_client.close()
+
+
+def run_targeted_extraction(os_client: OpenSearchClient) -> int:
+    """Cluster articles first, then scrape body text only for clustered articles.
+
+    Avoids scraping thousands of unclustered noise articles. Only fetches
+    body text for articles that belong to multi-source story clusters.
+    """
+    index_name = os_client.get_current_index_name()
+    grouper = StoryGrouper(os_client, min_cluster_size=3, min_samples=2)
+
+    # Collect article IDs that need extraction across all columns
+    articles_to_extract = []
+    seen_ids = set()
+
+    for column in COLUMNS:
+        stories = grouper.get_stories_for_column(column, size=2000)
+        multi_source = [s for s in stories if s.source_count >= 2]
+
+        for story in multi_source:
+            for article in story.articles:
+                aid = article.get("id", "")
+                if aid in seen_ids:
+                    continue
+                seen_ids.add(aid)
+                # Only extract articles that don't have body text yet
+                if not article.get("body") and not article.get("body_extracted_at"):
+                    articles_to_extract.append(article)
+
+    if not articles_to_extract:
+        return 0
+
+    console.print(f"[dim]  {len(articles_to_extract)} clustered articles need body text[/dim]")
+
+    extractor = ArticleExtractor(
+        timeout=config.extractor.timeout,
+        delay=config.extractor.delay,
+        max_workers=config.extractor.max_workers,
+    )
+    stats = extractor.extract_batch(articles_to_extract, os_client, index_name)
+    return stats["success"]
 
 
 def _write_story(
@@ -365,9 +407,8 @@ def run_pipeline_cycle(
         console.print(f"[red]  Fetch failed: {e}[/red]")
         new_articles = 0
 
-    # Step 2: Generate embeddings (catch-up for any missed during fetch)
-    # Note: body extraction runs as a separate service (scripts/run_extraction.py)
-    console.print("\n[dim]Step 3: Embedding catch-up...[/dim]")
+    # Step 2: Embedding catch-up
+    console.print("\n[dim]Step 2: Embedding catch-up...[/dim]")
     try:
         embedded_count = run_embeddings(os_client)
         if embedded_count > 0:
@@ -378,6 +419,18 @@ def run_pipeline_cycle(
         logger.error("embedding_failed", error=str(e))
         console.print(f"[red]  Embedding failed: {e}[/red]")
         embedded_count = 0
+
+    # Step 3: Cluster then scrape — only extract body text for clustered articles
+    console.print("\n[dim]Step 3: Targeted extraction (clustered articles only)...[/dim]")
+    try:
+        extracted = run_targeted_extraction(os_client)
+        if extracted > 0:
+            console.print(f"[green]  Extracted body text for {extracted} clustered articles[/green]")
+        else:
+            console.print(f"[dim]  All clustered articles already have body text[/dim]")
+    except Exception as e:
+        logger.error("targeted_extraction_failed", error=str(e))
+        console.print(f"[red]  Targeted extraction failed: {e}[/red]")
 
     # Step 4: Synthesize each column
     console.print("\n[dim]Step 4: Synthesizing stories...[/dim]")
