@@ -32,7 +32,6 @@ from src.synthesis.summarizer import compute_story_timing
 from src.embeddings import EmbeddingClient
 from src.embeddings.generator import generate_embeddings, generate_embeddings_for_articles
 from src.claim_graph import ClaimGraphBuilder
-from src.fetcher.extractor import ArticleExtractor
 from scripts.render_static import StaticSiteGenerator
 
 structlog.configure(
@@ -88,40 +87,6 @@ def run_fetch(os_client: OpenSearchClient, embed_client: Optional[EmbeddingClien
 
     return len(seen_urls)
 
-
-def run_extraction(os_client: OpenSearchClient) -> int:
-    """Extract full article body text for all articles missing it. Returns total processed."""
-    if not config.extractor.enabled:
-        return 0
-
-    index_name = os_client.get_current_index_name()
-    extractor = ArticleExtractor(
-        timeout=config.extractor.timeout,
-        delay=config.extractor.delay,
-        max_workers=config.extractor.max_workers,
-    )
-
-    total_processed = 0
-    batch_size = config.extractor.batch_size
-
-    while True:
-        articles = os_client.get_articles_without_body(
-            size=batch_size,
-            index_name=index_name,
-        )
-
-        if not articles:
-            break
-
-        stats = extractor.extract_batch(articles, os_client, index_name)
-        total_processed += stats["processed"]
-
-        console.print(f"[dim]    Extracted {stats['success']}/{stats['processed']} (total: {total_processed})[/dim]")
-
-        if stats["processed"] < batch_size:
-            break
-
-    return total_processed
 
 
 def run_embeddings(os_client: OpenSearchClient) -> int:
@@ -400,20 +365,8 @@ def run_pipeline_cycle(
         console.print(f"[red]  Fetch failed: {e}[/red]")
         new_articles = 0
 
-    # Step 2: Extract full article text
-    console.print("\n[dim]Step 2: Extracting article bodies...[/dim]")
-    try:
-        extracted_count = run_extraction(os_client)
-        if extracted_count > 0:
-            console.print(f"[green]  Extracted body text for {extracted_count} articles[/green]")
-        else:
-            console.print(f"[dim]  No articles need body extraction[/dim]")
-    except Exception as e:
-        logger.error("extraction_failed", error=str(e))
-        console.print(f"[red]  Extraction failed: {e}[/red]")
-        extracted_count = 0
-
-    # Step 3: Generate embeddings (catch-up for any missed during fetch)
+    # Step 2: Generate embeddings (catch-up for any missed during fetch)
+    # Note: body extraction runs as a separate service (scripts/run_extraction.py)
     console.print("\n[dim]Step 3: Embedding catch-up...[/dim]")
     try:
         embedded_count = run_embeddings(os_client)

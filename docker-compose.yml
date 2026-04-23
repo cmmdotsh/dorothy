@@ -76,6 +76,22 @@ services:
       opensearch:
         condition: service_healthy
 
+  # Article body extractor (runs continuously, independent of pipeline)
+  extractor:
+    build: .
+    container_name: dorothy-extractor
+    restart: unless-stopped
+    command: python -m scripts.run_extraction --daemon --workers 10 --interval 300
+    environment:
+      - OPENSEARCH_HOST=opensearch
+      - OPENSEARCH_PORT=9200
+      - OPENSEARCH_USE_SSL=false
+    networks:
+      - dorothy-net
+    depends_on:
+      opensearch:
+        condition: service_healthy
+
   # One-shot pipeline run (for testing)
   pipeline-once:
     build: .

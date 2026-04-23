@@ -28,12 +28,19 @@ _BROWSER_HEADERS = {
 }
 
 
-def _resolve_google_news_url(url: str) -> Optional[str]:
+def _resolve_google_news_url(url: str, timeout: float = 10.0) -> Optional[str]:
     """Resolve a Google News redirect URL to the real article URL."""
-    try:
-        from googlenewsdecoder.new_decoderv1 import decode_google_news_url
+    import concurrent.futures
 
-        result = decode_google_news_url(url)
+    def _decode():
+        from googlenewsdecoder.new_decoderv1 import decode_google_news_url
+        return decode_google_news_url(url)
+
+    try:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            future = pool.submit(_decode)
+            result = future.result(timeout=timeout)
+
         if result.get("status") and result.get("decoded_url"):
             logger.debug(
                 "google_news_resolved",
@@ -47,6 +54,9 @@ def _resolve_google_news_url(url: str) -> Optional[str]:
                 message=result.get("message", "")[:100],
             )
             return None
+    except concurrent.futures.TimeoutError:
+        logger.debug("google_news_resolve_timeout", url=url[:80])
+        return None
     except ImportError:
         logger.warning("googlenewsdecoder_not_installed")
         return None
