@@ -378,36 +378,47 @@ def run_pipeline_cycle(
     llm_client: LLMClient,
     stories_per_column: Optional[int] = None,
     render_and_deploy: bool = False,
+    skip_fetch: bool = False,
 ) -> dict:
-    """Run a full pipeline cycle: fetch → synthesize all columns."""
+    """Run a pipeline cycle.
+
+    Default: fetch → embed → targeted-extract → synthesize → render → deploy.
+    With skip_fetch=True (publisher mode): embed catch-up → synthesize → render → deploy.
+    Fetching and body extraction are handled by separate daemons in the split architecture.
+    """
     start_time = datetime.now(timezone.utc)
 
+    mode = "Publisher" if skip_fetch else "Pipeline"
     console.print(Panel.fit(
-        f"[bold blue]Pipeline Cycle Starting[/bold blue]\n{start_time.strftime('%Y-%m-%d %H:%M:%S UTC')}"
+        f"[bold blue]{mode} Cycle Starting[/bold blue]\n{start_time.strftime('%Y-%m-%d %H:%M:%S UTC')}"
     ))
 
-    # Initialize embedding client for inline embedding during fetch
-    embed_client = None
-    if config.embedding.enabled:
-        embed_client = EmbeddingClient(
-            base_url=config.embedding.base_url,
-            model=config.embedding.model,
-        )
-        if not embed_client.health_check():
-            logger.warning("embedding_service_unavailable_for_inline", base_url=config.embedding.base_url)
-            embed_client = None
+    new_articles = 0
+    extracted = 0
 
-    # Step 1: Fetch (+ inline embedding)
-    console.print("\n[dim]Step 1: Fetching articles" + (" + embedding inline..." if embed_client else "...") + "[/dim]")
-    try:
-        new_articles = run_fetch(os_client, embed_client=embed_client)
-        console.print(f"[green]  Fetched {new_articles} new articles[/green]")
-    except Exception as e:
-        logger.error("fetch_failed", error=str(e))
-        console.print(f"[red]  Fetch failed: {e}[/red]")
-        new_articles = 0
+    if not skip_fetch:
+        # Initialize embedding client for inline embedding during fetch
+        embed_client = None
+        if config.embedding.enabled:
+            embed_client = EmbeddingClient(
+                base_url=config.embedding.base_url,
+                model=config.embedding.model,
+            )
+            if not embed_client.health_check():
+                logger.warning("embedding_service_unavailable_for_inline", base_url=config.embedding.base_url)
+                embed_client = None
 
-    # Step 2: Embedding catch-up
+        # Step 1: Fetch (+ inline embedding)
+        console.print("\n[dim]Step 1: Fetching articles" + (" + embedding inline..." if embed_client else "...") + "[/dim]")
+        try:
+            new_articles = run_fetch(os_client, embed_client=embed_client)
+            console.print(f"[green]  Fetched {new_articles} new articles[/green]")
+        except Exception as e:
+            logger.error("fetch_failed", error=str(e))
+            console.print(f"[red]  Fetch failed: {e}[/red]")
+
+    # Step 2: Embedding catch-up — sanity step, picks up anything the fetcher
+    # daemon couldn't embed inline (e.g. LMStudio was briefly down)
     console.print("\n[dim]Step 2: Embedding catch-up...[/dim]")
     try:
         embedded_count = run_embeddings(os_client)
@@ -420,17 +431,19 @@ def run_pipeline_cycle(
         console.print(f"[red]  Embedding failed: {e}[/red]")
         embedded_count = 0
 
-    # Step 3: Cluster then scrape — only extract body text for clustered articles
-    console.print("\n[dim]Step 3: Targeted extraction (clustered articles only)...[/dim]")
-    try:
-        extracted = run_targeted_extraction(os_client)
-        if extracted > 0:
-            console.print(f"[green]  Extracted body text for {extracted} clustered articles[/green]")
-        else:
-            console.print(f"[dim]  All clustered articles already have body text[/dim]")
-    except Exception as e:
-        logger.error("targeted_extraction_failed", error=str(e))
-        console.print(f"[red]  Targeted extraction failed: {e}[/red]")
+    if not skip_fetch:
+        # Step 3: Cluster then scrape — only extract body text for clustered articles.
+        # In publisher mode this is skipped because the extractor daemon scrapes everything.
+        console.print("\n[dim]Step 3: Targeted extraction (clustered articles only)...[/dim]")
+        try:
+            extracted = run_targeted_extraction(os_client)
+            if extracted > 0:
+                console.print(f"[green]  Extracted body text for {extracted} clustered articles[/green]")
+            else:
+                console.print(f"[dim]  All clustered articles already have body text[/dim]")
+        except Exception as e:
+            logger.error("targeted_extraction_failed", error=str(e))
+            console.print(f"[red]  Targeted extraction failed: {e}[/red]")
 
     # Step 4: Synthesize each column
     console.print("\n[dim]Step 4: Synthesizing stories...[/dim]")
@@ -488,10 +501,16 @@ def run_pipeline_cycle(
     }
 
 
-def daemon_mode(interval_minutes: int, stories_per_column: int, render_and_deploy: bool = False) -> None:
+def daemon_mode(
+    interval_minutes: int,
+    stories_per_column: int,
+    render_and_deploy: bool = False,
+    skip_fetch: bool = False,
+) -> None:
     """Run pipeline on schedule."""
+    label = "Publisher" if skip_fetch else "Pipeline"
     console.print(Panel.fit(
-        f"[bold green]Dorothy Pipeline Daemon[/bold green]\n"
+        f"[bold green]Dorothy {label} Daemon[/bold green]\n"
         f"Running every {interval_minutes} minutes\n"
         f"Press Ctrl+C to stop"
     ))
@@ -530,11 +549,11 @@ def daemon_mode(interval_minutes: int, stories_per_column: int, render_and_deplo
     console.print()
 
     # Run immediately
-    run_pipeline_cycle(os_client, llm_client, stories_per_column, render_and_deploy)
+    run_pipeline_cycle(os_client, llm_client, stories_per_column, render_and_deploy, skip_fetch)
 
     # Schedule future runs
     def scheduled_run():
-        run_pipeline_cycle(os_client, llm_client, stories_per_column, render_and_deploy)
+        run_pipeline_cycle(os_client, llm_client, stories_per_column, render_and_deploy, skip_fetch)
 
     # Schedule on the hour if interval is a whole number of hours
     if interval_minutes == 60:
@@ -588,6 +607,11 @@ def main() -> None:
         action="store_true",
         help="Render static site and deploy to S3 after each cycle",
     )
+    parser.add_argument(
+        "--skip-fetch",
+        action="store_true",
+        help="Skip fetch + targeted-extraction (publisher mode — daemons handle scraping)",
+    )
 
     args = parser.parse_args()
 
@@ -614,11 +638,11 @@ def main() -> None:
         )
 
         try:
-            run_pipeline_cycle(os_client, llm_client, args.stories, args.publish)
+            run_pipeline_cycle(os_client, llm_client, args.stories, args.publish, args.skip_fetch)
         finally:
             llm_client.close()
     else:
-        daemon_mode(args.interval, args.stories, args.publish)
+        daemon_mode(args.interval, args.stories, args.publish, args.skip_fetch)
 
 
 if __name__ == "__main__":
