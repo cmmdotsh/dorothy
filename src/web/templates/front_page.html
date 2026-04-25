@@ -6,8 +6,9 @@
 {% if latest_episode %}
 <div class="podcast-strip" id="podcast-strip">
     <div class="ps-header">
-        <span class="ps-section-label">The Dorothy Wireless</span>
-        <a href="/podcast.html" class="ps-archive">Full Archive &rarr;</a>
+        <span class="ps-kicker">The Wireless</span>
+        <span class="ps-section-label">Latest dispatch</span>
+        <a href="/podcast.html" class="ps-archive">Full archive &rarr;</a>
     </div>
     <div class="ps-controls">
         <button class="ps-play-btn" id="ps-play" aria-label="Play podcast">&#9654;</button>
@@ -28,9 +29,10 @@
 
     {# ── Above the Fold ── #}
     <div class="above-fold">
-        {# Lead Story (left column ~60%) #}
+        {# Lead Story — drop-cap summary, big Newsreader headline #}
         {% if lead_story %}
-        <article class="lead-story">
+        {% set lead_first_bias = lead_story.bias_coverage.keys()|list|first if lead_story.bias_coverage else 'center' %}
+        <article class="lead-story" style="--fact-color: {{ bias_colors.get(lead_first_bias, '#a855f7') }}">
             {% if lead_story.hero_image_url %}
             <figure class="lead-image">
                 <a href="/story/{{ lead_story.story_id }}">
@@ -41,23 +43,28 @@
                 {% endif %}
             </figure>
             {% endif %}
+            <div class="lead-eyebrow">
+                <span class="lead-eyebrow-tag">The Lead</span>
+                <span class="lead-eyebrow-sep">·</span>
+                <a href="/column/politics" class="lead-eyebrow-col">Politics</a>
+                {% if lead_story.first_pub_date %}
+                <span class="lead-eyebrow-sep">·</span>
+                <time class="lead-eyebrow-time timeago" datetime="{{ lead_story.first_pub_date }}">{{ lead_story.first_pub_date }}</time>
+                {% endif %}
+            </div>
             <h2 class="lead-headline">
                 <a href="/story/{{ lead_story.story_id }}">{{ lead_story.generated_headline }}</a>
             </h2>
             {% set lead_preview = lead_story.article or lead_story.summary or '' %}
             {% if lead_preview %}
-            <p class="lead-summary">{{ lead_preview[:300] }}{% if lead_preview|length > 300 %}...{% endif %}</p>
+            <p class="lead-summary">{{ lead_preview[:300] }}{% if lead_preview|length > 300 %}…{% endif %}</p>
             {% endif %}
             <div class="lead-meta">
-                <span class="source-count">{{ lead_story.source_count }} sources</span>
-                <span class="sep">&bull;</span>
-                <span class="article-count">{{ lead_story.article_count }} articles</span>
-                {% if lead_story.first_pub_date %}
-                <span class="sep">&bull;</span>
-                <time class="timeago" datetime="{{ lead_story.first_pub_date }}">{{ lead_story.first_pub_date }}</time>
-                {% endif %}
+                <span class="lead-meta-num"><strong>{{ lead_story.source_count }}</strong> outlets</span>
+                <span class="lead-meta-sep">·</span>
+                <span class="lead-meta-num"><strong>{{ lead_story.article_count }}</strong> articles</span>
                 {% if lead_story.bias_coverage %}
-                <span class="sep">&bull;</span>
+                <span class="lead-meta-sep">·</span>
                 <span class="bias-indicators">
                     {% for bias in ['left', 'lean-left', 'center', 'lean-right', 'right'] %}
                         {% if bias in lead_story.bias_coverage %}
@@ -67,69 +74,95 @@
                 </span>
                 {% endif %}
             </div>
-            <a href="/story/{{ lead_story.story_id }}" class="read-full">Read full coverage &rarr;</a>
+            <a href="/story/{{ lead_story.story_id }}" class="read-full">Read full coverage <span aria-hidden="true">→</span></a>
         </article>
         {% endif %}
 
-        {# Sidebar - Secondary Stories (right column ~40%) #}
+        {# Sidebar — Today's Dispatches (numbered) #}
         <aside class="sidebar-stories">
-            {% for col_name in ['tech', 'money', 'sports'] %}
-                {% set col_stories = stories_by_column.get(col_name, []) %}
-                {% if col_stories %}
-                {% set story = col_stories[0] %}
-                <article class="sidebar-story">
-                    {% if story.hero_image_url and not loop.last %}
-                    <a href="/story/{{ story.story_id }}" class="sidebar-image">
-                        <img src="{{ story.hero_image_url }}" alt="{{ story.generated_headline }}" loading="lazy">
-                    </a>
+            <header class="sidebar-stories-header">
+                <span class="sidebar-stories-kicker">Today's Dispatches</span>
+            </header>
+            <ol class="dispatch-list">
+                {% for col_name in ['tech', 'money', 'sports'] %}
+                    {% set col_stories = stories_by_column.get(col_name, []) %}
+                    {% if col_stories %}
+                    {% set story = col_stories[0] %}
+                    {% set first_bias = story.bias_coverage.keys()|list|first if story.bias_coverage else 'center' %}
+                    {% if col_name == 'sports' %}
+                        {% set rail_color = region_colors.get(first_bias, bias_colors.get(first_bias, '#a855f7')) %}
+                    {% elif col_name == 'tech' %}
+                        {% set rail_color = perspective_colors.get(first_bias, bias_colors.get(first_bias, '#a855f7')) %}
+                    {% else %}
+                        {% set rail_color = bias_colors.get(first_bias, '#a855f7') %}
                     {% endif %}
-                    <div class="sidebar-content">
-                        <span class="column-label">{{ col_name|title }}</span>
-                        <h3 class="sidebar-headline">
-                            <a href="/story/{{ story.story_id }}">{{ story.generated_headline }}</a>
-                        </h3>
-                        <div class="story-meta">
-                            <span>{{ story.source_count }} sources</span>
-                            {% if story.bias_coverage %}
-                            <span class="bias-indicators">
-                                {% if col_name == 'sports' %}
-                                    {% for region in ['us', 'canada', 'mexico', 'uk', 'australia', 'india', 'japan', 'korea', 'international'] %}
-                                        {% if region in story.bias_coverage %}
-                                        <span class="bias-dot" style="background: {{ region_colors.get(region, '#888') }}" title="{{ region_labels.get(region, region|title) }}: {{ story.bias_coverage[region] }}"></span>
-                                        {% endif %}
-                                    {% endfor %}
-                                {% elif col_name == 'tech' %}
-                                    {% for perspective in ['consumer', 'enterprise', 'academic', 'culture'] %}
-                                        {% if perspective in story.bias_coverage %}
-                                        <span class="bias-dot" style="background: {{ perspective_colors.get(perspective, '#888') }}" title="{{ perspective_labels.get(perspective, perspective|title) }}: {{ story.bias_coverage[perspective] }}"></span>
-                                        {% endif %}
-                                    {% endfor %}
-                                {% else %}
-                                    {% for bias in ['left', 'lean-left', 'center', 'lean-right', 'right'] %}
-                                        {% if bias in story.bias_coverage %}
-                                        <span class="bias-dot" style="background: {{ bias_colors[bias] }}"></span>
-                                        {% endif %}
-                                    {% endfor %}
-                                {% endif %}
-                            </span>
+                    <li class="dispatch" style="--fact-color: {{ rail_color }}">
+                        <span class="dispatch-num">№ 0{{ loop.index }}</span>
+                        <span class="dispatch-rail" aria-hidden="true"></span>
+                        <div class="dispatch-body">
+                            <span class="dispatch-column">{{ col_name|title }}</span>
+                            {% if story.hero_image_url and not loop.last %}
+                            <a href="/story/{{ story.story_id }}" class="dispatch-image">
+                                <img src="{{ story.hero_image_url }}" alt="{{ story.generated_headline }}" loading="lazy">
+                            </a>
                             {% endif %}
+                            <h3 class="dispatch-headline">
+                                <a href="/story/{{ story.story_id }}">{{ story.generated_headline }}</a>
+                            </h3>
+                            <div class="dispatch-meta">
+                                <span><strong>{{ story.source_count }}</strong> outlets</span>
+                                {% if story.bias_coverage %}
+                                <span class="dispatch-meta-sep">·</span>
+                                <span class="bias-indicators">
+                                    {% if col_name == 'sports' %}
+                                        {% for region in ['us', 'canada', 'mexico', 'uk', 'australia', 'india', 'japan', 'korea', 'international'] %}
+                                            {% if region in story.bias_coverage %}
+                                            <span class="bias-dot" style="background: {{ region_colors.get(region, '#888') }}" title="{{ region_labels.get(region, region|title) }}: {{ story.bias_coverage[region] }}"></span>
+                                            {% endif %}
+                                        {% endfor %}
+                                    {% elif col_name == 'tech' %}
+                                        {% for perspective in ['consumer', 'enterprise', 'academic', 'culture'] %}
+                                            {% if perspective in story.bias_coverage %}
+                                            <span class="bias-dot" style="background: {{ perspective_colors.get(perspective, '#888') }}" title="{{ perspective_labels.get(perspective, perspective|title) }}: {{ story.bias_coverage[perspective] }}"></span>
+                                            {% endif %}
+                                        {% endfor %}
+                                    {% else %}
+                                        {% for bias in ['left', 'lean-left', 'center', 'lean-right', 'right'] %}
+                                            {% if bias in story.bias_coverage %}
+                                            <span class="bias-dot" style="background: {{ bias_colors[bias] }}"></span>
+                                            {% endif %}
+                                        {% endfor %}
+                                    {% endif %}
+                                </span>
+                                {% endif %}
+                            </div>
                         </div>
-                    </div>
-                </article>
-                {% if not loop.last %}<hr class="sidebar-divider">{% endif %}
-                {% endif %}
-            {% endfor %}
+                    </li>
+                    {% endif %}
+                {% endfor %}
+            </ol>
         </aside>
     </div>
 
+    {# ── Asterism break — pivots to the section grid ── #}
+    <div class="bs-break front-break" aria-hidden="true">
+        <span class="bs-break-mark">⁂</span>
+    </div>
+
+    <header class="departments-header">
+        <span class="departments-kicker">The Departments</span>
+        <p class="departments-deck">More from each beat, ordered by depth of coverage.</p>
+    </header>
+
     {# ── Below the Fold - Section Blocks ── #}
-    <hr class="fold-rule">
     <div class="section-grid">
         {% for col in columns %}
         <section class="section-block">
-            <h3 class="section-header">
-                <a href="/column/{{ col }}">{{ col|title }}</a>
-            </h3>
+            <header class="section-block-head">
+                <h3 class="section-title-h3">
+                    <a href="/column/{{ col }}">{{ col|title }}</a>
+                </h3>
+            </header>
 
             {% if col == 'politics' %}
                 {% set section_stories = stories_by_column.get(col, [])[1:] %}
@@ -145,16 +178,29 @@
             </a>
             {% endif %}
 
-            <ul class="section-headlines">
+            <ol class="section-headlines">
                 {% for story in section_stories[:3] %}
-                <li>
-                    <a href="/story/{{ story.story_id }}">{{ story.generated_headline }}</a>
-                    <span class="story-meta"><span>{{ story.source_count }} sources</span></span>
+                {% if col == 'sports' %}
+                    {% set first_bias = story.bias_coverage.keys()|list|first if story.bias_coverage else 'us' %}
+                    {% set rail_color = region_colors.get(first_bias, '#a855f7') %}
+                {% elif col == 'tech' %}
+                    {% set first_bias = story.bias_coverage.keys()|list|first if story.bias_coverage else 'consumer' %}
+                    {% set rail_color = perspective_colors.get(first_bias, '#a855f7') %}
+                {% else %}
+                    {% set first_bias = story.bias_coverage.keys()|list|first if story.bias_coverage else 'center' %}
+                    {% set rail_color = bias_colors.get(first_bias, '#a855f7') %}
+                {% endif %}
+                <li class="sh-item" style="--fact-color: {{ rail_color }}">
+                    <span class="sh-num">{{ loop.index }}</span>
+                    <div class="sh-body">
+                        <a href="/story/{{ story.story_id }}" class="sh-link">{{ story.generated_headline }}</a>
+                        <span class="sh-meta"><strong>{{ story.source_count }}</strong> outlets</span>
+                    </div>
                 </li>
                 {% endfor %}
-            </ul>
+            </ol>
 
-            <a href="/column/{{ col }}" class="section-more">More {{ col }} &rarr;</a>
+            <a href="/column/{{ col }}" class="section-more">More from {{ col }} <span aria-hidden="true">→</span></a>
         </section>
         {% endfor %}
     </div>

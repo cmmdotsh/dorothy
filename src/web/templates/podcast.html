@@ -4,11 +4,18 @@
 
 {% block content %}
 <div class="podcast-page">
-    <h1 class="section-title">Dorothy Podcast</h1>
+    <header class="pp-masthead">
+        <span class="pp-kicker">The Wireless</span>
+        <h1 class="pp-title">Dorothy on the Air</h1>
+        <p class="pp-deck">Daily audio dispatches — the front page, read aloud.</p>
+    </header>
 
     {% if latest_episode %}
-    <div class="podcast-featured">
-        <h2 class="featured-title">{{ latest_episode.title }}</h2>
+    <section class="pp-featured">
+        <div class="pp-featured-head">
+            <span class="pp-featured-tag">Latest dispatch</span>
+            <h2 class="pp-featured-title">{{ latest_episode.title }}</h2>
+        </div>
         <div class="podcast-player" id="featured-player">
             <button class="player-play-btn" id="fp-play" aria-label="Play episode">&#9654;</button>
             <div class="player-progress-wrap" id="fp-progress-wrap">
@@ -17,35 +24,47 @@
             <span class="player-time" id="fp-time">{{ latest_episode.duration or '0:00' }}</span>
         </div>
         <audio id="fp-audio" preload="none" src="/podcast/{{ latest_episode.filename }}"></audio>
-    </div>
+    </section>
     {% endif %}
 
-    <div class="podcast-subscribe">
-        <a href="/podcast/feed.xml" class="subscribe-link">Subscribe via RSS</a>
+    <div class="pp-subscribe">
+        <a href="/podcast/feed.xml" class="pp-subscribe-link">Subscribe via RSS <span aria-hidden="true">→</span></a>
     </div>
 
-    <hr class="fold-rule">
+    <div class="bs-break" aria-hidden="true">
+        <span class="bs-break-mark">⁂</span>
+    </div>
 
-    <h2 class="archive-heading">Archive</h2>
+    <header class="pp-archive-head">
+        <span class="pp-archive-kicker">Archive</span>
+        <h2 class="pp-archive-title">All episodes</h2>
+    </header>
+
+    {% if episodes %}
     <table class="episode-table">
         <thead>
             <tr>
-                <th>Date</th>
-                <th>Episode</th>
-                <th>Duration</th>
-                <th></th>
+                <th class="ep-th-num">№</th>
+                <th class="ep-th-date">Date</th>
+                <th class="ep-th-title">Episode</th>
+                <th class="ep-th-duration">Duration</th>
+                <th class="ep-th-play"></th>
             </tr>
         </thead>
         <tbody>
             {% for ep in episodes %}
             <tr>
+                <td class="ep-num">{{ '%02d' % loop.index }}</td>
                 <td class="ep-date">{{ ep.pub_date }}</td>
                 <td class="ep-title">{{ ep.title }}</td>
                 <td class="ep-duration">{{ ep.duration }}</td>
-                <td class="ep-play"><a href="/podcast/{{ ep.filename }}" class="play-link">&#9654; Play</a></td>
+                <td class="ep-play"><a href="/podcast/{{ ep.filename }}" class="play-link">Play <span aria-hidden="true">▸</span></a></td>
             </tr>
             {% endfor %}
         </tbody>
     </table>
+    {% else %}
+    <p class="pp-empty">No episodes yet — check back soon.</p>
+    {% endif %}
 </div>
 {% endblock %}

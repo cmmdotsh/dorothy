@@ -4,81 +4,110 @@
 
 {% block content %}
 <section class="column-page">
-    <h2 class="section-title">{{ column|title }}</h2>
+    <header class="col-masthead">
+        <span class="col-masthead-kicker">The {{ column|title }} Beat</span>
+        <h2 class="col-masthead-title">{{ column|title }}</h2>
+        <p class="col-masthead-deck">
+            {% if stories %}{{ stories|length }} stor{% if stories|length == 1 %}y{% else %}ies{% endif %} clustered from independent outlets, ordered by depth of coverage.{% else %}No clustered stories yet for this beat.{% endif %}
+        </p>
+    </header>
 
     {% if stories %}
-    <div class="sort-controls">
-        <span class="sort-label">Sort by:</span>
+    <div class="col-controls sort-controls">
+        <span class="col-controls-label">Sort by</span>
         <button class="sort-btn active" data-sort="hotness">Hottest</button>
+        <span class="col-controls-sep">·</span>
         <button class="sort-btn" data-sort="newest">Newest</button>
-        <button class="sort-btn" data-sort="sources">Most Sources</button>
+        <span class="col-controls-sep">·</span>
+        <button class="sort-btn" data-sort="sources">Most sources</button>
     </div>
-    <div class="stories-list" id="stories-list">
+
+    <ol class="col-dispatches" id="stories-list">
         {% for story in stories %}
-        <article class="story-card story-card-full"
-                 data-hotness="{{ story.hotness_score|default(0) }}"
-                 data-generated-at="{{ story.generated_at|default('') }}"
-                 data-source-count="{{ story.source_count|default(0) }}">
-            <h3 class="story-headline">
-                <a href="/story/{{ story.story_id }}">{{ story.generated_headline }}</a>
-            </h3>
+        {% if column == 'sports' %}
+            {% set first_bias = story.bias_coverage.keys()|list|first if story.bias_coverage else 'us' %}
+            {% set rail_color = region_colors.get(first_bias, '#a855f7') %}
+        {% elif column == 'tech' %}
+            {% set first_bias = story.bias_coverage.keys()|list|first if story.bias_coverage else 'consumer' %}
+            {% set rail_color = perspective_colors.get(first_bias, '#a855f7') %}
+        {% else %}
+            {% set first_bias = story.bias_coverage.keys()|list|first if story.bias_coverage else 'center' %}
+            {% set rail_color = bias_colors.get(first_bias, '#a855f7') %}
+        {% endif %}
+        <li class="col-dispatch story-card story-card-full"
+            style="--fact-color: {{ rail_color }}"
+            data-hotness="{{ story.hotness_score|default(0) }}"
+            data-generated-at="{{ story.generated_at|default('') }}"
+            data-source-count="{{ story.source_count|default(0) }}">
+            <span class="col-dispatch-num">{{ '%02d' % loop.index }}</span>
+            <span class="col-dispatch-rail" aria-hidden="true"></span>
+            <article class="col-dispatch-body">
+                <h3 class="col-dispatch-headline">
+                    <a href="/story/{{ story.story_id }}">{{ story.generated_headline }}</a>
+                </h3>
 
-            {% set preview = story.article or story.summary or '' %}
-            {% if preview %}
-            <p class="story-summary">{{ preview[:300] }}{% if preview|length > 300 %}...{% endif %}</p>
-            {% endif %}
-
-            <div class="story-meta">
-                <span class="source-count">{{ story.source_count }} sources</span>
-                <span class="article-count">{{ story.article_count }} articles</span>
-                {% if story.first_pub_date %}
-                <span class="sep">&bull;</span>
-                <time class="timeago" datetime="{{ story.first_pub_date }}">{{ story.first_pub_date }}</time>
+                {% set preview = story.article or story.summary or '' %}
+                {% if preview %}
+                <p class="col-dispatch-summary">{{ preview[:280] }}{% if preview|length > 280 %}…{% endif %}</p>
                 {% endif %}
-            </div>
 
-            {% if story.bias_coverage %}
-            <div class="bias-breakdown">
-                {% if column == 'sports' %}
-                    {% for region, count in story.bias_coverage.items() %}
-                    <span class="bias-pill region-pill" style="background: {{ region_colors.get(region, '#888') }}">
-                        {{ region_labels.get(region, region|title) }}: {{ count }}
-                    </span>
-                    {% endfor %}
-                {% elif column == 'tech' %}
-                    {% for perspective, count in story.bias_coverage.items() %}
-                    <span class="bias-pill" style="background: {{ perspective_colors.get(perspective, '#888') }}">
-                        {{ perspective_labels.get(perspective, perspective|title) }}: {{ count }}
-                    </span>
-                    {% endfor %}
-                {% else %}
-                    {% for bias, count in story.bias_coverage.items() %}
-                    <span class="bias-pill" style="background: {{ bias_colors.get(bias, '#888') }}">
-                        {{ bias|title }}: {{ count }}
-                    </span>
-                    {% endfor %}
+                <div class="col-dispatch-meta">
+                    <span><strong>{{ story.source_count }}</strong> outlets</span>
+                    <span class="col-dispatch-meta-sep">·</span>
+                    <span><strong>{{ story.article_count }}</strong> articles</span>
+                    {% if story.first_pub_date %}
+                    <span class="col-dispatch-meta-sep">·</span>
+                    <time class="timeago" datetime="{{ story.first_pub_date }}">{{ story.first_pub_date }}</time>
+                    {% endif %}
+                </div>
+
+                {% if story.bias_coverage %}
+                <div class="col-dispatch-coverage">
+                    {% if column == 'sports' %}
+                        {% for region, count in story.bias_coverage.items() %}
+                        <span class="cov-tag" style="--cov-color: {{ region_colors.get(region, '#888') }}">
+                            <span class="cov-dot"></span>
+                            <span class="cov-name">{{ region_labels.get(region, region|title) }}</span>
+                            <span class="cov-count">{{ count }}</span>
+                        </span>
+                        {% endfor %}
+                    {% elif column == 'tech' %}
+                        {% for perspective, count in story.bias_coverage.items() %}
+                        <span class="cov-tag" style="--cov-color: {{ perspective_colors.get(perspective, '#888') }}">
+                            <span class="cov-dot"></span>
+                            <span class="cov-name">{{ perspective_labels.get(perspective, perspective|title) }}</span>
+                            <span class="cov-count">{{ count }}</span>
+                        </span>
+                        {% endfor %}
+                    {% else %}
+                        {% for bias, count in story.bias_coverage.items() %}
+                        <span class="cov-tag" style="--cov-color: {{ bias_colors.get(bias, '#888') }}">
+                            <span class="cov-dot"></span>
+                            <span class="cov-name">{{ bias|title|replace('-', ' ') }}</span>
+                            <span class="cov-count">{{ count }}</span>
+                        </span>
+                        {% endfor %}
+                    {% endif %}
+                </div>
                 {% endif %}
-            </div>
-            {% endif %}
 
-            {% if story.sources_used %}
-            <div class="source-list">
-                <span class="source-label">Sources:</span>
-                {% for source in story.sources_used[:5] %}
-                <span class="source-name">{{ source }}</span>{% if not loop.last %}, {% endif %}
-                {% endfor %}
-                {% if story.sources_used|length > 5 %}
-                <span class="more-sources">+{{ story.sources_used|length - 5 }} more</span>
+                {% if story.sources_used %}
+                <div class="col-dispatch-sources">
+                    <span class="cds-label">Sources</span>
+                    <span class="cds-list">
+                        {% for source in story.sources_used[:5] %}<span class="cds-source">{{ source }}</span>{% if not loop.last %}<span class="cds-sep">·</span>{% endif %}{% endfor %}
+                        {% if story.sources_used|length > 5 %}<span class="cds-more">+ {{ story.sources_used|length - 5 }} more</span>{% endif %}
+                    </span>
+                </div>
                 {% endif %}
-            </div>
-            {% endif %}
 
-            <a href="/story/{{ story.story_id }}" class="read-more">Read full synthesis →</a>
-        </article>
+                <a href="/story/{{ story.story_id }}" class="col-dispatch-more">Read full synthesis <span aria-hidden="true">→</span></a>
+            </article>
+        </li>
         {% endfor %}
-    </div>
+    </ol>
     {% else %}
-    <p class="no-stories">No synthesized stories available for {{ column }}. Stories require coverage from at least 2 different sources.</p>
+    <p class="col-no-stories">No synthesized stories available for {{ column }}. Stories require coverage from at least two independent outlets.</p>
     {% endif %}
 </section>
 {% endblock %}

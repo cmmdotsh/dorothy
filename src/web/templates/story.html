@@ -52,57 +52,103 @@
 
         <div class="tab-panel" id="panel-article">
             {% if story.claim_graph and story.claim_graph.corroborated %}
-            <section class="story-content">
-                <div class="extractive-article">
-                    {% for cluster in story.claim_graph.corroborated %}
-                    <div class="ex-fact">
-                        <p class="ex-passage-text">{{ cluster.sources[0].text }}<sup class="ex-ref">{{ loop.index }}</sup></p>
-                        {% if cluster.sources|length > 1 %}
-                        <details class="ex-versions">
-                            <summary>{{ cluster.sources|length - 1 }} other source{{ 's' if cluster.sources|length - 1 != 1 }}</summary>
-                            <div class="ex-versions-list">
-                                {% for src in cluster.sources[1:] %}
-                                <div class="ex-version">
-                                    <span class="bias-pill small" style="background: {{ bias_colors.get(src.source_bias, '#888') }}">{{ src.source_name }}</span>
-                                    <p>{{ src.text }}</p>
-                                </div>
-                                {% endfor %}
-                            </div>
-                        </details>
-                        {% endif %}
-                    </div>
-                    {% endfor %}
-
-                    <footer class="ex-citations">
-                        <h4 class="ex-citations-heading">Sources</h4>
-                        <ol class="ex-citation-list">
-                            {% for cluster in story.claim_graph.corroborated %}
-                            <li>
-                                <span class="ex-citation-source">{{ cluster.sources[0].source_name }}</span>
-                                {% if cluster.source_count > 1 %}
-                                <span class="ex-citation-also">also: {{ cluster.source_names[1:]|join(', ') }}</span>
-                                {% endif %}
-                            </li>
-                            {% endfor %}
-                        </ol>
-                    </footer>
-
-                    {% if story.claim_graph.unique_details %}
-                    <aside class="ex-unique-section">
-                        <h4 class="ex-unique-heading">Single-Source Reports</h4>
-                        {% set seen_sources = [] %}
-                        {% for detail in story.claim_graph.unique_details %}
-                        {% if detail.source_name not in seen_sources %}
-                        {% if seen_sources.append(detail.source_name) %}{% endif %}
-                        <div class="ex-unique">
-                            <span class="bias-pill small" style="background: {{ bias_colors.get(detail.source_bias, '#888') }}">{{ detail.source_name }}</span>
-                            <p>{{ detail.text }}</p>
-                        </div>
-                        {% endif %}
-                        {% endfor %}
-                    </aside>
+            {% set max_sources = story.claim_graph.corroborated | map(attribute='source_count') | max %}
+            {% set total_facts = story.claim_graph.corroborated | length %}
+            {% set ns = namespace(prime_idx=-1) %}
+            {% if max_sources >= 3 %}
+                {% for c in story.claim_graph.corroborated %}
+                    {% if not loop.first and c.source_count == max_sources and ns.prime_idx == -1 %}
+                        {% set ns.prime_idx = loop.index0 %}
                     {% endif %}
+                {% endfor %}
+            {% endif %}
+            <section class="story-broadsheet">
+                <div class="bs-eyebrow">
+                    {% if story.column %}<span class="bs-eyebrow-col">{{ story.column }}</span><span class="bs-eyebrow-sep">·</span>{% endif %}
+                    <span class="bs-eyebrow-meta">A press review of {{ story.source_count }} outlet{{ 's' if story.source_count != 1 }}</span>
                 </div>
+
+                <ol class="bs-article">
+                    {% for cluster in story.claim_graph.corroborated %}
+                    {% set primary = cluster.sources[0] %}
+                    {% set is_prime = loop.index0 == ns.prime_idx %}
+                    {% set is_lede = loop.first %}
+                    <li class="bs-fact{% if is_prime %} bs-fact--prime{% endif %}{% if is_lede %} bs-fact--lede{% endif %}"
+                        style="--fact-color: {{ bias_colors.get(primary.source_bias, '#8a8580') }}">
+                        <span class="bs-rail" aria-hidden="true"></span>
+                        <div class="bs-passage-wrap">
+                            <p class="bs-passage">{{ primary.text }}</p>
+                            {% if cluster.sources|length > 1 %}
+                            <details class="bs-also">
+                                <summary>
+                                    <span class="bs-also-marker" aria-hidden="true"></span>
+                                    <span class="bs-also-label">Compare</span>
+                                    <span class="bs-also-count">{{ cluster.sources|length - 1 }} other version{{ 's' if cluster.sources|length - 1 != 1 }}</span>
+                                </summary>
+                                <div class="bs-also-list">
+                                    {% for src in cluster.sources[1:] %}
+                                    <div class="bs-also-item" style="--alt-color: {{ bias_colors.get(src.source_bias, '#8a8580') }}">
+                                        <div class="bs-also-attr">
+                                            <span class="bias-dot" style="background: {{ bias_colors.get(src.source_bias, '#8a8580') }}"></span>
+                                            <strong>{{ src.source_name }}</strong>
+                                        </div>
+                                        <p>{{ src.text }}</p>
+                                    </div>
+                                    {% endfor %}
+                                </div>
+                            </details>
+                            {% endif %}
+                        </div>
+                        <aside class="bs-side">
+                            <span class="bs-side-num">№ {{ '%02d' % loop.index }}</span>
+                            <span class="bs-side-source">{{ primary.source_name }}</span>
+                            {% if cluster.source_count > 1 %}
+                            <span class="bs-side-corrob">+ {{ cluster.source_count - 1 }} corroborate{{ 's' if cluster.source_count - 1 != 1 }}</span>
+                            {% else %}
+                            <span class="bs-side-corrob bs-side-corrob--solo">primary only</span>
+                            {% endif %}
+                        </aside>
+                    </li>
+                    {% endfor %}
+                </ol>
+
+                <div class="bs-break" aria-hidden="true">
+                    <span class="bs-break-mark">⁂</span>
+                </div>
+
+                {% if story.claim_graph.unique_details %}
+                {% set unique_seen = [] %}
+                {% set unique_unique = [] %}
+                {% for d in story.claim_graph.unique_details %}
+                {% if d.source_name not in unique_seen %}
+                {% if unique_seen.append(d.source_name) %}{% endif %}
+                {% if unique_unique.append(d) %}{% endif %}
+                {% endif %}
+                {% endfor %}
+                <section class="bs-margins">
+                    <header class="bs-margins-header">
+                        <span class="bs-margins-kicker">From the margins</span>
+                        <h4 class="bs-margins-title">{{ unique_unique|length }} detail{{ 's' if unique_unique|length != 1 }} only one outlet reported</h4>
+                        <p class="bs-margins-note">Independent claims that didn't surface elsewhere in our corpus. Treat as supplementary — not corroborated across outlets.</p>
+                    </header>
+                    <ol class="bs-margins-list">
+                        {% for detail in unique_unique %}
+                        <li class="bs-margin-item" style="--alt-color: {{ bias_colors.get(detail.source_bias, '#8a8580') }}">
+                            <header class="bs-margin-attr">
+                                <span class="bs-margin-num">{{ '%02d' % loop.index }}</span>
+                                <span class="bias-dot" style="background: {{ bias_colors.get(detail.source_bias, '#8a8580') }}"></span>
+                                <span class="bs-margin-source">{{ detail.source_name }}</span>
+                            </header>
+                            <p>{{ detail.text }}</p>
+                        </li>
+                        {% endfor %}
+                    </ol>
+                </section>
+                {% endif %}
+
+                <footer class="bs-colophon">
+                    <p>Assembled from <strong>{{ total_facts }}</strong> corroborated claim{{ 's' if total_facts != 1 }} drawn from <strong>{{ story.source_count }}</strong> independent outlet{{ 's' if story.source_count != 1 }}. Every passage above is taken verbatim — Dorothy doesn't paraphrase or summarize.</p>
+                </footer>
             </section>
             {% elif story.article %}
             <section class="story-content">
