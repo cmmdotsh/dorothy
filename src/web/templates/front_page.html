@@ -55,7 +55,7 @@
             <h2 class="lead-headline">
                 <a href="/story/{{ lead_story.story_id }}">{{ lead_story.generated_headline }}</a>
             </h2>
-            {% set lead_preview = lead_story.article or lead_story.summary or '' %}
+            {% set lead_preview = (lead_story.article or lead_story.summary or '')|plaintext %}
             {% if lead_preview %}
             <p class="lead-summary">{{ lead_preview[:300] }}{% if lead_preview|length > 300 %}…{% endif %}</p>
             {% endif %}

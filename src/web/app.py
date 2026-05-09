@@ -54,6 +54,9 @@ def create_app() -> FastAPI:
     md = MarkdownIt()
     templates.env.filters["markdown"] = lambda text: Markup(md.render(text)) if text else ""
 
+    from src.claim_graph.chunker import strip_markdown
+    templates.env.filters["plaintext"] = lambda text: strip_markdown(text) if text else ""
+
     # Store templates in app state for route access
     app.state.templates = templates
 

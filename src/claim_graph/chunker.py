@@ -8,6 +8,132 @@ from src.claim_graph.models import Chunk
 # Sentence boundary: period/question/exclamation followed by space and uppercase letter
 _SENTENCE_SPLIT = re.compile(r'(?<=[.!?])\s+(?=[A-Z])')
 
+_RE_IMAGE = re.compile(r'!\[([^\]]*)\]\([^\)]*\)')
+_RE_LINK_INLINE = re.compile(r'\[([^\]]+)\]\([^\)]*\)')
+_RE_LINK_REF = re.compile(r'\[([^\]]+)\]\[[^\]]*\]')
+_RE_HEADER = re.compile(r'^[ \t]*#{1,6}[ \t]+', re.MULTILINE)
+# trafilatura sometimes drops ## directly after non-newline content (e.g. video
+# index pages where a timestamp is followed by an h2): "01:30## Headline".
+# Replace any 2+ consecutive '#' anywhere with a space so words don't fuse.
+_RE_HEADER_INLINE = re.compile(r'#{2,}')
+_RE_LIST_BULLET = re.compile(r'^[ \t]*[*+\-][ \t]+', re.MULTILINE)
+_RE_LIST_ORDERED = re.compile(r'^[ \t]*\d+\.[ \t]+', re.MULTILINE)
+_RE_BLOCKQUOTE = re.compile(r'^[ \t]*>[ \t]?', re.MULTILINE)
+_RE_HRULE = re.compile(r'^[ \t]*[-*_]{3,}[ \t]*$', re.MULTILINE)
+_RE_EMPHASIS_STAR = re.compile(r'\*{1,3}([^*\n]+?)\*{1,3}')
+_RE_EMPHASIS_UNDER = re.compile(r'(?<!\w)_{1,3}([^_\n]+?)_{1,3}(?!\w)')
+_RE_INLINE_CODE = re.compile(r'`+([^`\n]+?)`+')
+_RE_BACKSLASH_ESCAPE = re.compile(r'\\([\\`*_{}\[\]()#+\-.!>])')
+_RE_BLANK_LINES = re.compile(r'\n{3,}')
+# Trafilatura emits the article title as a leading H1. That title is already
+# stored separately on the article, and including it as a chunk causes the
+# article's own headline to leak into the rendered passages.
+_RE_LEADING_TITLE = re.compile(r'\A[ \t]*#[ \t]+[^\n]+(?:\n+|\Z)')
+
+
+def _drop_leading_title(body: str) -> str:
+    """Strip the leading H1 title from a markdown article body, if present."""
+    return _RE_LEADING_TITLE.sub('', body, count=1)
+
+
+# Lines that are pure CTA / footer / promo / byline boilerplate. Trafilatura
+# pulls these in as standalone paragraphs from article footers, sidebars, and
+# newsletter widgets. They survive merging because the next paragraph is real
+# content, polluting both the embeddings and the rendered "From the margins"
+# section. Match conservatively — only the obvious cases.
+_BOILERPLATE_PATTERNS = [
+    re.compile(r'^sign up( here)?\.?$', re.I),
+    re.compile(r'^subscribe( now| here| today)?\.?$', re.I),
+    re.compile(r'^read more:', re.I),
+    re.compile(r'^also read:', re.I),
+    re.compile(r'^see also:', re.I),
+    re.compile(r'^related( stories| articles| coverage| topics)?:?\s*$', re.I),
+    re.compile(r'^more from\s', re.I),
+    re.compile(r'^for more\b(?!\s+than\b|\s+information than\b)', re.I),
+    # Tweet / Bluesky attribution lines: "— Mario Nawfal (@handle) April 26, 2026"
+    re.compile(r'^[—–-]\s*.+\s\(@[\w.]+\)\s+\w+\s+\d+,\s*\d{4}', re.I),
+    # Affiliate / commerce disclosures
+    re.compile(r'\bmay earn (a )?commission\b', re.I),
+    re.compile(r'\bif you buy something through (a )?link', re.I),
+    re.compile(r'\bsubscribe for free\b', re.I),
+    re.compile(r'^this is an extract from\b', re.I),
+    # USA Today-style "Reach her at email and follow her on X @handle"
+    re.compile(r'^reach (her|him|them) at \S+@\S+', re.I),
+    # "Contributing: Name" / "Contributing from: Name" reporter credits
+    re.compile(r'^contributing( from)?:?\s+\w', re.I),
+    re.compile(r'^continue reading', re.I),
+    re.compile(r'^click here', re.I),
+    re.compile(r'^follow us\b', re.I),
+    re.compile(r'^reporting by\b', re.I),
+    re.compile(r'^editing by\b', re.I),
+    re.compile(r'^writing by\b', re.I),
+    re.compile(r'^additional reporting by\b', re.I),
+    re.compile(r'^our standards:', re.I),
+    re.compile(r'^the thomson reuters trust principles', re.I),
+    re.compile(r'^available to .+ users only\.?$', re.I),
+    re.compile(r'^advertisement$', re.I),
+    re.compile(r'^trending( now| stories)?\.?$', re.I),
+    re.compile(r'^you may (also )?like', re.I),
+    re.compile(r'^recommended( for you| stories)?', re.I),
+    re.compile(r'^most popular', re.I),
+    re.compile(r'^tags?:', re.I),
+    re.compile(r'^topics:', re.I),
+    re.compile(r'^categor(y|ies):', re.I),
+    re.compile(r'^©\s*\d{4}', re.I),
+    re.compile(r'^copyright\b', re.I),
+    re.compile(r'all rights reserved', re.I),
+]
+
+
+def _is_boilerplate_line(line: str) -> bool:
+    stripped = line.strip()
+    if not stripped:
+        return False
+    return any(p.search(stripped) for p in _BOILERPLATE_PATTERNS)
+
+
+def _drop_boilerplate(paragraph: str) -> str:
+    """Remove leading/trailing boilerplate lines from a paragraph.
+
+    Internal boilerplate lines (between two prose lines) are left alone — those
+    are usually rare and removing them can fuse unrelated thoughts. Blank lines
+    are transparent to this scan so we can chain past them.
+    """
+    lines = paragraph.split('\n')
+    while lines and (not lines[0].strip() or _is_boilerplate_line(lines[0])):
+        lines.pop(0)
+    while lines and (not lines[-1].strip() or _is_boilerplate_line(lines[-1])):
+        lines.pop()
+    return '\n'.join(lines).strip()
+
+
+def strip_markdown(text: str) -> str:
+    """Convert markdown-formatted text to plain prose, preserving paragraph breaks.
+
+    trafilatura emits the article body as markdown. The chunker then splits
+    it into passages that get rendered verbatim in story templates, so any
+    leftover markers (## headers, **bold**, [links](url)) leak into the page.
+    Strip them here so the rendered text reads as clean prose.
+    """
+    if not text:
+        return ""
+    text = _RE_IMAGE.sub(r'\1', text)
+    text = _RE_LINK_INLINE.sub(r'\1', text)
+    text = _RE_LINK_REF.sub(r'\1', text)
+    text = _RE_HEADER.sub('', text)
+    text = _RE_HEADER_INLINE.sub(' ', text)
+    text = _RE_LIST_BULLET.sub('', text)
+    text = _RE_LIST_ORDERED.sub('', text)
+    text = _RE_BLOCKQUOTE.sub('', text)
+    text = _RE_HRULE.sub('', text)
+    text = _RE_EMPHASIS_STAR.sub(r'\1', text)
+    text = text.replace('*', '')
+    text = _RE_EMPHASIS_UNDER.sub(r'\1', text)
+    text = _RE_INLINE_CODE.sub(r'\1', text)
+    text = _RE_BACKSLASH_ESCAPE.sub(r'\1', text)
+    text = _RE_BLANK_LINES.sub('\n\n', text)
+    return text
+
 
 def chunk_article(
     article: dict,
@@ -28,6 +154,9 @@ def chunk_article(
     column = article.get("column", "")
 
     body = article.get("body")
+    if body:
+        body = _drop_leading_title(body)
+        body = strip_markdown(body)
     if not body:
         # Fallback: headline + summary as a single chunk
         headline = article.get("headline", "")
@@ -52,8 +181,13 @@ def chunk_article(
     # Split on double newlines (markdown paragraph boundaries)
     raw_paragraphs = re.split(r'\n{2,}', body.strip())
 
-    # Clean up: strip whitespace, drop empty
-    raw_paragraphs = [p.strip() for p in raw_paragraphs if p.strip()]
+    # Clean up: strip whitespace, drop empty, drop pure boilerplate paragraphs.
+    cleaned_paragraphs: list[str] = []
+    for p in raw_paragraphs:
+        p = _drop_boilerplate(p.strip())
+        if p:
+            cleaned_paragraphs.append(p)
+    raw_paragraphs = cleaned_paragraphs
 
     # Merge short paragraphs with the next one
     merged: list[str] = []

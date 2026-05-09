@@ -46,7 +46,7 @@
                     <a href="/story/{{ story.story_id }}">{{ story.generated_headline }}</a>
                 </h3>
 
-                {% set preview = story.article or story.summary or '' %}
+                {% set preview = (story.article or story.summary or '')|plaintext %}
                 {% if preview %}
                 <p class="col-dispatch-summary">{{ preview[:280] }}{% if preview|length > 280 %}…{% endif %}</p>
                 {% endif %}

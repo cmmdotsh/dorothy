@@ -167,6 +167,9 @@ class StaticSiteGenerator:
         md = MarkdownIt()
         self.env.filters["markdown"] = lambda text: Markup(md.render(text)) if text else ""
 
+        from src.claim_graph.chunker import strip_markdown
+        self.env.filters["plaintext"] = lambda text: strip_markdown(text) if text else ""
+
         # Initialize OpenSearch client
         auth_kwargs = {}
         if config.opensearch.username and config.opensearch.password:
