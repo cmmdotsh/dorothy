@@ -145,6 +145,23 @@ def run_fetch_job(embed: bool = True) -> dict:
     return stats
 
 
+def run_fetch_job_guarded(embed: bool = True) -> dict:
+    """Run one fetch cycle, never letting an exception escape.
+
+    Wraps run_fetch_job for daemon use: a failing run (e.g. an OpenSearch
+    rollover error) is logged and reported via the stats dict so the daemon
+    loop and scheduler survive to try again next interval. KeyboardInterrupt
+    and SystemExit derive from BaseException, not Exception, so they still
+    propagate to the caller. One-shot (--once) runs call run_fetch_job
+    directly and keep their unhandled-exception behavior.
+    """
+    try:
+        return run_fetch_job(embed=embed)
+    except Exception as e:
+        logger.error("fetch_job_failed", error=str(e), exc_info=True)
+        return {"success": False, "error": str(e)}
+
+
 def print_stats(stats: dict) -> None:
     """Pretty print fetch stats."""
     if not stats.get("success"):
@@ -175,10 +192,10 @@ def daemon_mode(embed: bool = True) -> None:
         f"({'with' if embed else 'without'} inline embedding). Press Ctrl+C to stop."
     )
 
-    stats = run_fetch_job(embed=embed)
+    stats = run_fetch_job_guarded(embed=embed)
     print_stats(stats)
 
-    schedule.every(interval).minutes.do(lambda: print_stats(run_fetch_job(embed=embed)))
+    schedule.every(interval).minutes.do(lambda: print_stats(run_fetch_job_guarded(embed=embed)))
 
     def shutdown_handler(signum, frame):
         console.print("\n[yellow]Shutting down...[/yellow]")

@@ -393,6 +393,28 @@ def run_pipeline_cycle(
         f"[bold blue]{mode} Cycle Starting[/bold blue]\n{start_time.strftime('%Y-%m-%d %H:%M:%S UTC')}"
     ))
 
+    # Fast reachability probe: fail this cycle in seconds if the LLM host is
+    # down, instead of stalling later in generate() retries (600s x 3 per call)
+    # during synthesis. schedule does not catch job exceptions, and a stalled
+    # job blocks the daemon until the next interval anyway.
+    if not llm_client.is_reachable():
+        now = datetime.now(timezone.utc)
+        duration = (now - start_time).total_seconds()
+        logger.warning(
+            "cycle_skipped_llm_unreachable",
+            base_url=config.llm.base_url,
+            duration_seconds=duration,
+        )
+        console.print(f"[red]LLM unreachable at {config.llm.base_url} — skipping cycle[/red]")
+        return {
+            "new_articles": 0,
+            "embedded_count": 0,
+            "stories_synthesized": 0,
+            "by_column": {},
+            "duration_seconds": duration,
+            "timestamp": now.isoformat(),
+        }
+
     new_articles = 0
     extracted = 0
 

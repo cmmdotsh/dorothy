@@ -54,14 +54,25 @@ def generate_embeddings(
     total_processed = 0
     total_success = 0
     total_errors = 0
+    # Articles whose embedding failed this run. Skipped for the rest of
+    # this invocation so they are not re-selected and retried forever;
+    # they keep no embedding in the index and are retried on the next
+    # cycle/process.
+    failed_ids: set[str] = set()
 
     while True:
-        articles = os_client.get_articles_without_embeddings(
-            size=batch_size, index_name=index_name
-        )
+        articles = [
+            a
+            for a in os_client.get_articles_without_embeddings(
+                size=batch_size, index_name=index_name
+            )
+            if a["id"] not in failed_ids
+        ]
 
         if not articles:
-            logger.info("no_more_articles_without_embeddings")
+            logger.info(
+                "no_more_articles_without_embeddings", skipped_failed=len(failed_ids)
+            )
             break
 
         if limit and total_processed >= limit:
@@ -75,6 +86,11 @@ def generate_embeddings(
 
             updates = list(zip(article_ids, embeddings))
             success, errors = os_client.bulk_update_embeddings(updates, index_name)
+            if updates and success == 0:
+                # Nothing was stored (e.g. index write-blocked); skip these
+                # articles for the rest of the run so the loop cannot spin
+                # on them forever.
+                failed_ids.update(article_ids)
 
             total_processed += len(articles)
             total_success += success
@@ -100,14 +116,29 @@ def generate_embeddings(
             for article_id, text in zip(article_ids, texts):
                 try:
                     single_embedding = embed_client.embed([text])
-                    os_client.bulk_update_embeddings([(article_id, single_embedding[0])], index_name)
-                    batch_success += 1
+                    success, _ = os_client.bulk_update_embeddings(
+                        [(article_id, single_embedding[0])], index_name
+                    )
+                    if success:
+                        batch_success += 1
+                    else:
+                        # Embedding computed but not stored; skip this
+                        # article for the rest of the run.
+                        failed_ids.add(article_id)
+                        batch_errors += 1
                 except EmbeddingError:
-                    # Store a zero-vector so this article isn't retried forever
-                    zero_vec = [0.0] * 1024
-                    os_client.bulk_update_embeddings([(article_id, zero_vec)], index_name)
+                    # No vector is stored. Skip this article for the rest
+                    # of this run so it is not re-selected and retried
+                    # forever; the next cycle will pick it up again.
+                    failed_ids.add(article_id)
                     batch_errors += 1
 
+            if batch_errors:
+                logger.warning(
+                    "embedding_articles_failed",
+                    failed_this_batch=batch_errors,
+                    total_failed=len(failed_ids),
+                )
             total_processed += len(articles)
             total_success += batch_success
             total_errors += batch_errors
@@ -129,6 +160,7 @@ def generate_embeddings(
         total_processed=total_processed,
         total_success=total_success,
         total_errors=total_errors,
+        total_failed=len(failed_ids),
     )
 
 

@@ -1,8 +1,17 @@
+# Bounded json-file logs everywhere: an unbounded fetcher crash-loop log
+# (337MB) helped fill the 12G rootfs in July 2026. Never again.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   # OpenSearch for article storage and k-NN clustering
   opensearch:
     image: opensearchproject/opensearch:2.11.1
     container_name: dorothy-opensearch
+    logging: *default-logging
     environment:
       - discovery.type=single-node
       - OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m
@@ -24,6 +33,7 @@ services:
   opensearch-dashboards:
     image: opensearchproject/opensearch-dashboards:2.11.1
     container_name: dorothy-dashboards
+    logging: *default-logging
     profiles:
       - debug
     ports:
@@ -42,6 +52,7 @@ services:
   fetcher:
     build: .
     container_name: dorothy-fetcher
+    logging: *default-logging
     restart: unless-stopped
     command: python -m scripts.run_fetch --daemon --interval 10
     environment:
@@ -64,6 +75,7 @@ services:
   extractor:
     build: .
     container_name: dorothy-extractor
+    logging: *default-logging
     restart: unless-stopped
     command: python -m scripts.run_extraction --daemon --workers 10 --interval 120
     environment:
@@ -82,6 +94,7 @@ services:
   publisher:
     build: .
     container_name: dorothy-publisher
+    logging: *default-logging
     restart: unless-stopped
     command: python -m scripts.run_pipeline --skip-fetch --interval 60 --publish --stories 20
     environment:
@@ -117,6 +130,7 @@ services:
   pipeline-once:
     build: .
     container_name: dorothy-pipeline-once
+    logging: *default-logging
     profiles:
       - manual
     command: python -m scripts.run_pipeline --once
@@ -142,6 +156,7 @@ services:
   render:
     build: .
     container_name: dorothy-render
+    logging: *default-logging
     profiles:
       - manual
     command: python -m scripts.render_static --clean
@@ -161,6 +176,7 @@ services:
   web:
     build: .
     container_name: dorothy-web
+    logging: *default-logging
     profiles:
       - dev
     command: python -m scripts.run_server --host 0.0.0.0
@@ -182,6 +198,7 @@ services:
       context: .
       dockerfile: Dockerfile.podcast
     container_name: dorothy-podcast
+    logging: *default-logging
     restart: unless-stopped
     command: python -m scripts.run_podcast --daemon --interval 60 --publish
     environment:

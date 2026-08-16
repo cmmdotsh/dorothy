@@ -19,6 +19,11 @@ class LLMError(Exception):
 # English text averages ~4 chars/token; we use 3.5 for safety margin.
 CHARS_PER_TOKEN = 3.5
 
+# Upper bound (seconds) for the /v1/models reachability probe. generate()
+# retries with the full request timeout (600s x 3 attempts + backoff), so
+# probing first bounds failure discovery for a down/black-holing host.
+PROBE_TIMEOUT = 10.0
+
 
 class LLMClient:
     """
@@ -197,8 +202,28 @@ class LLMClient:
         """
         return int(len(text) / CHARS_PER_TOKEN)
 
+    def is_reachable(self) -> bool:
+        """Fast bounded reachability probe: GET /v1/models with a short timeout.
+
+        Unlike generate() (full timeout x 3 retries), this surfaces a
+        down/black-holing host within PROBE_TIMEOUT seconds.
+        """
+        try:
+            response = self.client.get(
+                f"{self.base_url}/v1/models", timeout=PROBE_TIMEOUT
+            )
+            response.raise_for_status()
+            return True
+        except httpx.HTTPError as e:
+            logger.error("llm_unreachable", base_url=self.base_url, error=str(e))
+            return False
+
     def health_check(self) -> bool:
-        """Check if the LLM service is reachable."""
+        """Check if the LLM service is reachable and answering."""
+        # Cheap probe first: fail in seconds if the host is down, instead of
+        # burning generate()'s retry budget against a black-holing endpoint.
+        if not self.is_reachable():
+            return False
         try:
             result = self.generate("Say 'ok' if you can read this.", max_tokens=10)
             if result:
