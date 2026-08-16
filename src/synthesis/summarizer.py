@@ -3,7 +3,7 @@
 import json
 import re
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import numpy as np
@@ -98,13 +98,23 @@ class StoryTiming:
     last_pub_date: Optional[str] = None
 
 
-def compute_story_timing(articles: list[dict], now: Optional[datetime] = None) -> StoryTiming:
+def compute_story_timing(
+    articles: list[dict],
+    now: Optional[datetime] = None,
+    window_hours: int = 72,
+) -> StoryTiming:
     """Compute hotness score and story timing from article pub_dates.
+
+    Every parsed pub_date is clamped into [now - window_hours, now] before
+    median/first/last/hotness are derived; the raw pub_date on the article
+    docs is left untouched. Stale archive dumps can't masquerade as fresh
+    news, and future-dated feeds can't pin hotness.
 
     hotness = article_count / max(1, hours_since_median_pub_date) * source_diversity_bonus
     """
     if now is None:
         now = _utcnow()
+    floor = now - timedelta(hours=window_hours)
 
     pub_dates = []
     for a in articles:
@@ -118,6 +128,7 @@ def compute_story_timing(articles: list[dict], now: Optional[datetime] = None) -
                 continue
         if pd.tzinfo is None:
             pd = pd.replace(tzinfo=timezone.utc)
+        pd = min(max(pd, floor), now)
         pub_dates.append(pd)
 
     if not pub_dates:
