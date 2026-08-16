@@ -114,6 +114,7 @@ class StoryGrouper:
         min_cluster_size: int = 3,
         min_samples: int = 2,
         cluster_selection_epsilon: float = 0.0,
+        cluster_selection_method: str = "leaf",
         window_hours: int = 72,
         max_per_source: int = 40,
         # Legacy params (ignored, kept for backward compatibility)
@@ -129,6 +130,9 @@ class StoryGrouper:
             min_cluster_size: Minimum articles to form a cluster (default: 3)
             min_samples: Core point density threshold (default: 2)
             cluster_selection_epsilon: Merge nearby clusters threshold (default: 0.0)
+            cluster_selection_method: HDBSCAN cluster extraction: "leaf" picks the
+                tightest leaf clusters (default; "eom" collapses dense columns like
+                money/lifestyle into one grab-bag blob - measured 2026-08-16)
             window_hours: Only cluster articles published this recently (default: 72)
             max_per_source: Cap articles per source per fetch (default: 40)
             similarity_threshold: Deprecated, kept for backward compatibility
@@ -139,6 +143,7 @@ class StoryGrouper:
         self.min_cluster_size = min_cluster_size
         self.min_samples = min_samples
         self.cluster_selection_epsilon = cluster_selection_epsilon
+        self.cluster_selection_method = cluster_selection_method
         self.window_hours = window_hours
         self.max_per_source = max_per_source
 
@@ -173,7 +178,7 @@ class StoryGrouper:
             min_cluster_size=self.min_cluster_size,
             min_samples=self.min_samples,
             metric="precomputed",
-            cluster_selection_method="eom",
+            cluster_selection_method=self.cluster_selection_method,
             cluster_selection_epsilon=self.cluster_selection_epsilon,
         )
         return clusterer.fit_predict(distance_matrix)

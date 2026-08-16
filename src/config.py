@@ -106,6 +106,9 @@ class ClusteringSettings(BaseSettings):
     max_per_source: int = 40
     min_cluster_size: int = 3
     min_samples: int = 2
+    # "leaf" extracts tight leaf clusters; "eom" measurably collapses dense
+    # columns (money/lifestyle) into single grab-bag blobs.
+    cluster_selection_method: str = "leaf"
 
     class Config:
         env_prefix = "CLUSTERING_"

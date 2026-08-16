@@ -65,3 +65,12 @@ def test_search_articles_returns_hits():
     client.client.search.return_value = {"hits": {"hits": [{"_source": {"id": "a1"}}]}}
     got = client.search_articles(column="politics", index_name="dorothy-articles-2026-08")
     assert got == [{"id": "a1"}]
+
+
+def test_leaf_selection_is_default():
+    client = MagicMock()
+    g = StoryGrouper(client)
+    assert g.cluster_selection_method == "leaf"
+
+    from src.config import ClusteringSettings
+    assert ClusteringSettings().cluster_selection_method == "leaf"

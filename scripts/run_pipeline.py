@@ -137,6 +137,7 @@ def run_targeted_extraction(os_client: OpenSearchClient) -> int:
         os_client,
         min_cluster_size=config.clustering.min_cluster_size,
         min_samples=config.clustering.min_samples,
+        cluster_selection_method=config.clustering.cluster_selection_method,
         window_hours=config.clustering.window_hours,
         max_per_source=config.clustering.max_per_source,
     )
@@ -327,6 +328,7 @@ def run_synthesis(
             os_client,
             min_cluster_size=config.clustering.min_cluster_size,
             min_samples=config.clustering.min_samples,
+            cluster_selection_method=config.clustering.cluster_selection_method,
             window_hours=config.clustering.window_hours,
             max_per_source=config.clustering.max_per_source,
         )
