@@ -24,6 +24,9 @@
             {% endif %}
         </div>
         {% endif %}
+        {% if story.event_id %}
+        <a href="/event/{{ story.event_id }}" class="read-full story-thread-link">The story so far — full thread <span aria-hidden="true">&rarr;</span></a>
+        {% endif %}
     </header>
 
     {% if story.hero_image_url %}

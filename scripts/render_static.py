@@ -26,7 +26,9 @@ from markdown_it import MarkdownIt
 from rich.console import Console
 
 from src.config import config
+from src.events.store import EventStore
 from src.storage import OpenSearchClient
+from src.storage.opensearch import EVENTS_INDEX
 
 structlog.configure(
     processors=[
@@ -121,6 +123,16 @@ def _dedup_stories(stories: list[dict], threshold: float = 0.3) -> list[dict]:
             kept_url_sets.append(urls)
 
     return kept
+
+
+def _parse_iso(value: str | None) -> datetime | None:
+    """Parse an ISO datetime string, tolerating junk/missing values."""
+    if not value:
+        return None
+    try:
+        return dateutil_parser.isoparse(value)
+    except (ValueError, TypeError):
+        return None
 
 
 def _utcnow() -> datetime:
@@ -322,6 +334,77 @@ class StaticSiteGenerator:
         """Get the current edition number from OpenSearch."""
         return self.os_client.get_edition()
 
+    def _get_events(self) -> "list | None":
+        """All event threads, or None when the events index is unavailable.
+
+        None means "skip event rendering entirely" (index missing or store
+        unreachable); [] means the index exists but holds no threads.
+        """
+        try:
+            store = EventStore(self.os_client)
+            if not self.os_client.client.indices.exists(index=EVENTS_INDEX):
+                logger.info("events_render_skipped", reason="events_index_missing")
+                return None
+            return store.get_all_events()
+        except Exception as exc:
+            logger.info("events_render_skipped", error=str(exc))
+            return None
+
+    @staticmethod
+    def _previous_chapter(event, story_id: str | None) -> dict | None:
+        """The chapter immediately before story_id in the thread (oldest→newest order)."""
+        chapters = event.chapters or []
+        for i, chapter in enumerate(chapters):
+            if chapter.get("story_id") == story_id:
+                return chapters[i - 1] if i > 0 else None
+        return None
+
+    def get_developments(self, limit: int = 6, max_age_hours: int = 72) -> list[dict]:
+        """Front-page Developments: fresh syntheses attached to event threads.
+
+        Last-72h syntheses carrying an event_id, newest first, capped at limit.
+        Each entry carries the thread title, the previous chapter line and a
+        "Last covered <Month Year>" badge when the gap to the previous chapter
+        exceeds 14 days.
+        """
+        events = self._get_events()
+        if not events:
+            return []
+        events_by_id = {e.event_id: e for e in events}
+
+        threaded: list[dict] = []
+        for column in COLUMNS:
+            for story in self.get_stories_for_column(column, limit=20,
+                                                     max_age_hours=max_age_hours):
+                if story.get("event_id"):
+                    threaded.append(story)
+        threaded = _dedup_stories(threaded)
+        threaded.sort(key=lambda s: s.get("generated_at") or "", reverse=True)
+
+        developments = []
+        for story in threaded[:limit]:
+            dev = {
+                "story_id": story.get("story_id"),
+                "headline": story.get("generated_headline"),
+                "generated_at": story.get("generated_at"),
+                "article_count": story.get("article_count", 0),
+                "event_id": story.get("event_id"),
+            }
+            event = events_by_id.get(story.get("event_id"))
+            if event is not None:
+                dev["event_title"] = event.title
+                prev = self._previous_chapter(event, story.get("story_id"))
+                if prev is not None:
+                    dev["prev_headline"] = prev.get("generated_headline")
+                    prev_at = _parse_iso(prev.get("generated_at"))
+                    this_at = _parse_iso(story.get("generated_at"))
+                    if prev_at is not None:
+                        dev["prev_date"] = prev_at.strftime("%b %-d, %Y")
+                        if this_at is not None and (this_at - prev_at).days > 14:
+                            dev["last_covered"] = prev_at.strftime("%B %Y")
+            developments.append(dev)
+        return developments
+
     def render_template(self, template_name: str, context: dict) -> str:
         """Render a template with context."""
         template = self.env.get_template(template_name)
@@ -354,6 +437,7 @@ class StaticSiteGenerator:
         html = self.render_template("front_page.html", {
             "stories_by_column": stories_by_column,
             "latest_episode": episodes[0] if episodes else None,
+            "developments": self.get_developments(),
         })
 
         self.write_page(self.output_dir / "index.html", html)
@@ -424,6 +508,34 @@ class StaticSiteGenerator:
         console.print(f"[green]  Rendered {rendered} story pages[/green]")
         return rendered
 
+    def render_event_pages(self) -> int:
+        """Render a page per event thread. Returns count (0 when unavailable)."""
+        events = self._get_events()
+        if not events:
+            return 0
+        rendered = 0
+        for event in events:
+            html = self.render_template("event.html", {"event": event})
+            self.write_page(self.output_dir / "event" / event.event_id / "index.html", html)
+            rendered += 1
+        console.print(f"[green]  Rendered {rendered} event pages[/green]")
+        return rendered
+
+    def render_events_index(self) -> None:
+        """Render the events index (active threads first, then dormant)."""
+        events = self._get_events()
+        if events is None:
+            return
+        active = [e for e in events if e.status == "active"]
+        dormant = [e for e in events if e.status != "active"]
+        html = self.render_template("events_index.html", {
+            "active": active,
+            "dormant": dormant,
+        })
+        self.write_page(self.output_dir / "events" / "index.html", html)
+        console.print(f"[green]  Rendered events/index.html "
+                      f"({len(active)} active, {len(dormant)} dormant)[/green]")
+
     def generate(self) -> dict:
         """Generate the complete static site."""
         start = datetime.now(timezone.utc)
@@ -438,6 +550,8 @@ class StaticSiteGenerator:
         self.render_about_page()
         self.render_podcast_page(episodes)
         story_count = self.render_story_pages()
+        event_count = self.render_event_pages()
+        self.render_events_index()
 
         duration = (datetime.now(timezone.utc) - start).total_seconds()
 
@@ -447,6 +561,7 @@ class StaticSiteGenerator:
         return {
             "output_dir": str(self.output_dir.absolute()),
             "story_count": story_count,
+            "event_count": event_count,
             "column_count": len(COLUMNS),
             "duration_seconds": duration,
         }

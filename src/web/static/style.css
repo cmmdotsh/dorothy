@@ -1166,6 +1166,26 @@ time.timeago-full {
     border: 1px dashed var(--border-color);
 }
 
+/* — Developments strip (front page) — */
+.dev-thread {
+    font-style: italic;
+}
+
+.dev-badge {
+    display: inline-block;
+    margin-left: 0.5rem;
+    padding: 0.1rem 0.55rem;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 0.66rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    color: var(--text-muted);
+    border: 1px solid var(--border-color);
+    border-radius: 999px;
+    vertical-align: middle;
+}
+
 /* ========================================
    STORY DETAIL PAGE
 ======================================== */

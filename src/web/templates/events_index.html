@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+
+{% block title %}Event Threads{% endblock %}
+
+{% macro thread_list(threads) %}
+<ol class="col-dispatches">
+    {% for e in threads %}
+    <li class="col-dispatch">
+        <span class="col-dispatch-num">{{ '%02d' % loop.index }}</span>
+        <span class="col-dispatch-rail" aria-hidden="true"></span>
+        <article class="col-dispatch-body">
+            <h3 class="col-dispatch-headline">
+                <a href="/event/{{ e.event_id }}">{{ e.title }}</a>
+            </h3>
+            {% if e.summary %}
+            <p class="col-dispatch-summary">{{ e.summary[:160] }}{% if e.summary|length > 160 %}…{% endif %}</p>
+            {% endif %}
+            <div class="col-dispatch-meta">
+                <span><strong>{{ e.chapters|length }}</strong> chapter{{ 's' if e.chapters|length != 1 }}</span>
+                <span class="col-dispatch-meta-sep">·</span>
+                <span>last seen <time class="timeago" datetime="{{ e.last_seen }}">{{ e.last_seen[:10] }}</time></span>
+            </div>
+        </article>
+    </li>
+    {% endfor %}
+</ol>
+{% endmacro %}
+
+{% block content %}
+<section class="column-page">
+    <header class="col-masthead">
+        <span class="col-masthead-kicker">The Long View</span>
+        <h2 class="col-masthead-title">Event Threads</h2>
+        <p class="col-masthead-deck">Developing stories Dorothy has followed across days and months — each chapter links to the day's full synthesis.</p>
+    </header>
+
+    <span class="col-masthead-kicker">Active threads</span>
+    {% if active %}
+        {{ thread_list(active) }}
+    {% else %}
+        <p class="col-no-stories">No active threads right now. Check back after the next publishing cycle.</p>
+    {% endif %}
+
+    {% if dormant %}
+    <span class="col-masthead-kicker">Dormant threads</span>
+        {{ thread_list(dormant) }}
+    {% endif %}
+</section>
+{% endblock %}

@@ -208,5 +208,43 @@
         </section>
         {% endfor %}
     </div>
+
+    {% if developments %}
+    {# ── Developments — latest chapters of tracked event threads ── #}
+    <div class="bs-break front-break" aria-hidden="true">
+        <span class="bs-break-mark">⁂</span>
+    </div>
+
+    <header class="departments-header">
+        <span class="departments-kicker">Developments</span>
+        <p class="departments-deck">The latest chapters of stories Dorothy has been following for days or months.</p>
+    </header>
+
+    <ol class="col-dispatches dev-list">
+        {% for dev in developments %}
+        <li class="col-dispatch">
+            <span class="col-dispatch-num">{{ '%02d' % loop.index }}</span>
+            <span class="col-dispatch-rail" aria-hidden="true"></span>
+            <article class="col-dispatch-body">
+                <h3 class="col-dispatch-headline">
+                    <a href="/story/{{ dev.story_id }}">{{ dev.headline }}</a>
+                </h3>
+                {% if dev.event_title %}
+                <p class="col-dispatch-summary">
+                    Latest in <a class="dev-thread" href="/event/{{ dev.event_id }}">{{ dev.event_title }}</a>{% if dev.prev_headline %} — Previously: {{ dev.prev_headline }}, {{ dev.prev_date }}{% endif %}{% if dev.last_covered %} <span class="dev-badge">Last covered {{ dev.last_covered }}</span>{% endif %}
+                </p>
+                {% endif %}
+                <div class="col-dispatch-meta">
+                    <span><strong>{{ dev.article_count }}</strong> articles</span>
+                    <span class="col-dispatch-meta-sep">·</span>
+                    <span><time class="timeago" datetime="{{ dev.generated_at }}">{{ dev.generated_at }}</time></span>
+                </div>
+            </article>
+        </li>
+        {% endfor %}
+    </ol>
+
+    <a href="/events" class="section-more">All event threads <span aria-hidden="true">→</span></a>
+    {% endif %}
 </section>
 {% endblock %}
