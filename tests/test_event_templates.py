@@ -60,3 +60,44 @@ def test_events_index_lists_active_then_dormant():
     # one-line summary truncated to 160 chars + ellipsis
     assert "S" * 160 in html and "S" * 161 not in html and "…" in html
     assert 'href="/event/event-a"' in html
+
+
+
+def _dev(prev="Old headline", gap=40, chapters=3):
+    return {"event_id": "event-abc", "thread_title": "The Thread",
+            "story": {"story_id": "story-new", "generated_headline": "New headline",
+                      "generated_at": "2026-08-16T00:00:00+00:00", "article_count": 5},
+            "prev_headline": prev, "gap_days": gap, "chapter_count": chapters}
+
+
+def _front(devs):
+    return ENV.get_template("front_page.html").render(
+        stories_by_column={}, developments=devs, latest_episode=None, **CTX)
+
+
+def test_front_page_developments_thread_entry():
+    html = _front([_dev()])
+    assert 'href="/story/story-new"' in html
+    assert 'href="/event/event-abc"' in html and "The Thread" in html
+    assert "chapter 3" in html
+    assert "Previously:" in html and "Old headline" in html
+    assert "Resurfaced after 40 days" in html
+
+
+def test_front_page_developments_suppresses_duplicate_and_small_gap():
+    # prev headline differs only by case → no "Previously" line
+    # gap 3 ≤ 14 days → no badge
+    html = _front([_dev(prev="NEW HEADLINE", gap=3, chapters=1)])
+    assert "Previously" not in html
+    assert "dev-badge" not in html
+    assert "chapter 1" not in html
+
+
+def test_front_page_developments_story_only_entry():
+    html = _front([{"event_id": "event-x", "thread_title": None,
+                    "story": {"story_id": "story-solo", "generated_headline": "Solo",
+                              "generated_at": "2026-08-16T00:00:00+00:00",
+                              "article_count": 2},
+                    "prev_headline": None, "gap_days": None, "chapter_count": 1}])
+    assert 'href="/story/story-solo"' in html and "Solo" in html
+    assert "The Thread" not in html and "Previously" not in html

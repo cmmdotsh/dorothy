@@ -227,17 +227,17 @@
             <span class="col-dispatch-rail" aria-hidden="true"></span>
             <article class="col-dispatch-body">
                 <h3 class="col-dispatch-headline">
-                    <a href="/story/{{ dev.story_id }}">{{ dev.headline }}</a>
+                    <a href="/story/{{ dev.story.story_id }}">{{ dev.story.generated_headline }}</a>
                 </h3>
-                {% if dev.event_title %}
+                {% if dev.thread_title %}
                 <p class="col-dispatch-summary">
-                    Latest in <a class="dev-thread" href="/event/{{ dev.event_id }}">{{ dev.event_title }}</a>{% if dev.prev_headline %} — Previously: {{ dev.prev_headline }}, {{ dev.prev_date }}{% endif %}{% if dev.last_covered %} <span class="dev-badge">Last covered {{ dev.last_covered }}</span>{% endif %}
+                    Latest in <a class="dev-thread" href="/event/{{ dev.event_id }}">{{ dev.thread_title }}</a>{% if dev.chapter_count and dev.chapter_count > 1 %} — chapter {{ dev.chapter_count }}{% endif %}{% if dev.prev_headline and dev.prev_headline|lower != dev.story.generated_headline|lower %} — Previously: {{ dev.prev_headline }}{% endif %}{% if dev.gap_days and dev.gap_days > 14 %} <span class="dev-badge">Resurfaced after {{ dev.gap_days }} days</span>{% endif %}
                 </p>
                 {% endif %}
                 <div class="col-dispatch-meta">
-                    <span><strong>{{ dev.article_count }}</strong> articles</span>
+                    <span><strong>{{ dev.story.article_count }}</strong> articles</span>
                     <span class="col-dispatch-meta-sep">·</span>
-                    <span><time class="timeago" datetime="{{ dev.generated_at }}">{{ dev.generated_at }}</time></span>
+                    <span><time class="timeago" datetime="{{ dev.story.generated_at }}">{{ dev.story.generated_at }}</time></span>
                 </div>
             </article>
         </li>

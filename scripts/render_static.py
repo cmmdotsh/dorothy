@@ -135,6 +135,17 @@ def _parse_iso(value: str | None) -> datetime | None:
         return None
 
 
+def _whole_days_between(newer: datetime | None, older: datetime | None) -> int | None:
+    """Whole days from `older` to `newer` (naive values assumed UTC); None if unknown."""
+    if newer is None or older is None:
+        return None
+    if newer.tzinfo is None:
+        newer = newer.replace(tzinfo=timezone.utc)
+    if older.tzinfo is None:
+        older = older.replace(tzinfo=timezone.utc)
+    return (newer - older).days
+
+
 def _utcnow() -> datetime:
     """Current UTC time (patchable in tests)."""
     return datetime.now(timezone.utc)
@@ -359,51 +370,71 @@ class StaticSiteGenerator:
                 return chapters[i - 1] if i > 0 else None
         return None
 
-    def get_developments(self, limit: int = 6, max_age_hours: int = 72) -> list[dict]:
-        """Front-page Developments: fresh syntheses attached to event threads.
+    def get_developments(self, limit: int = 6, max_age_hours: int = 72,
+                         exclude_story_ids: set | None = None) -> list[dict]:
+        """Front-page Developments: one entry per event thread.
 
-        Last-72h syntheses carrying an event_id, newest first, capped at limit.
-        Each entry carries the thread title, the previous chapter line and a
-        "Last covered <Month Year>" badge when the gap to the previous chapter
-        exceeds 14 days.
+        Last-72h syntheses carrying an event_id are grouped by thread; each
+        entry carries the latest chapter as `story` plus thread metadata from
+        the EventStore: title, chapter count, the previous chapter's headline
+        and the whole-day gap to it. Threads whose latest chapter is already
+        shown in a lead/department slot (exclude_story_ids) are dropped
+        entirely — earlier chapters are not resurrected. EventStore failures
+        degrade to story-only entries (thread_title=None), never crash.
         """
-        events = self._get_events()
-        if not events:
-            return []
-        events_by_id = {e.event_id: e for e in events}
+        exclude = exclude_story_ids or set()
 
         threaded: list[dict] = []
         for column in COLUMNS:
-            for story in self.get_stories_for_column(column, limit=20,
-                                                     max_age_hours=max_age_hours):
-                if story.get("event_id"):
-                    threaded.append(story)
+            threaded.extend(s for s in self.get_stories_for_column(
+                column, limit=20, max_age_hours=max_age_hours) if s.get("event_id"))
         threaded = _dedup_stories(threaded)
-        threaded.sort(key=lambda s: s.get("generated_at") or "", reverse=True)
+
+        latest_by_event: dict[str, dict] = {}
+        chapters_seen: dict[str, int] = {}
+        for story in threaded:
+            event_id = story["event_id"]
+            chapters_seen[event_id] = chapters_seen.get(event_id, 0) + 1
+            kept = latest_by_event.get(event_id)
+            if kept is None or (story.get("generated_at") or "") > (kept.get("generated_at") or ""):
+                latest_by_event[event_id] = story
+
+        events_by_id: dict = {}
+        try:
+            if self.os_client.client.indices.exists(index=EVENTS_INDEX):
+                events_by_id = {e.event_id: e
+                                for e in EventStore(self.os_client).get_all_events()}
+        except Exception as exc:
+            logger.info("developments_events_unavailable", error=str(exc))
+            events_by_id = {}
 
         developments = []
-        for story in threaded[:limit]:
+        for event_id, story in latest_by_event.items():
+            if story.get("story_id") in exclude:
+                continue
             dev = {
-                "story_id": story.get("story_id"),
-                "headline": story.get("generated_headline"),
-                "generated_at": story.get("generated_at"),
-                "article_count": story.get("article_count", 0),
-                "event_id": story.get("event_id"),
+                "event_id": event_id,
+                "thread_title": None,
+                "story": story,
+                "prev_headline": None,
+                "gap_days": None,
+                "chapter_count": chapters_seen[event_id],
             }
-            event = events_by_id.get(story.get("event_id"))
+            event = events_by_id.get(event_id)
             if event is not None:
-                dev["event_title"] = event.title
+                dev["thread_title"] = event.title
+                dev["chapter_count"] = len(event.chapters or [])
                 prev = self._previous_chapter(event, story.get("story_id"))
                 if prev is not None:
                     dev["prev_headline"] = prev.get("generated_headline")
-                    prev_at = _parse_iso(prev.get("generated_at"))
-                    this_at = _parse_iso(story.get("generated_at"))
-                    if prev_at is not None:
-                        dev["prev_date"] = prev_at.strftime("%b %-d, %Y")
-                        if this_at is not None and (this_at - prev_at).days > 14:
-                            dev["last_covered"] = prev_at.strftime("%B %Y")
+                    dev["gap_days"] = _whole_days_between(
+                        _parse_iso(story.get("generated_at")),
+                        _parse_iso(prev.get("generated_at")))
             developments.append(dev)
-        return developments
+
+        developments.sort(key=lambda d: d["story"].get("generated_at") or "",
+                          reverse=True)
+        return developments[:limit]
 
     def render_template(self, template_name: str, context: dict) -> str:
         """Render a template with context."""
@@ -431,13 +462,18 @@ class StaticSiteGenerator:
     def render_front_page(self, episodes: list[dict] | None = None) -> None:
         """Render the front page."""
         stories_by_column = {}
+        lead_and_department_ids: set = set()
         for column in COLUMNS:
-            stories_by_column[column] = self.get_stories_for_column(column, limit=3)
+            stories = self.get_stories_for_column(column, limit=3)
+            stories_by_column[column] = stories
+            lead_and_department_ids.update(
+                s.get("story_id") for s in stories if s.get("story_id"))
 
         html = self.render_template("front_page.html", {
             "stories_by_column": stories_by_column,
             "latest_episode": episodes[0] if episodes else None,
-            "developments": self.get_developments(),
+            "developments": self.get_developments(
+                exclude_story_ids=lead_and_department_ids),
         })
 
         self.write_page(self.output_dir / "index.html", html)
