@@ -14,6 +14,7 @@ logger = structlog.get_logger(__name__)
 INDEX_PREFIX = "dorothy-articles"
 SYNTHESIS_INDEX = "dorothy-synthesis"
 METADATA_INDEX = "dorothy-metadata"
+EVENTS_INDEX = "dorothy-events"
 
 
 def utcnow() -> datetime:
@@ -49,6 +50,9 @@ SYNTHESIS_MAPPING = {
             "edition": {"type": "integer"},
             "is_current": {"type": "boolean"},
             "superseded_by": {"type": "keyword"},
+            "event_id": {"type": "keyword"},
+            "summary_embedding": {"type": "float"},
+            "thread_candidate": {"type": "boolean"},
             "hotness_score": {"type": "float"},
             "median_pub_date": {"type": "date"},
             "first_pub_date": {"type": "date"},
@@ -88,6 +92,29 @@ SYNTHESIS_MAPPING = {
                 "type": "object",
                 "enabled": False,
             },
+        }
+    },
+}
+
+EVENTS_MAPPING = {
+    "settings": {
+        "index": {
+            "number_of_shards": 1,
+            "number_of_replicas": 0,
+        }
+    },
+    "mappings": {
+        "properties": {
+            "event_id": {"type": "keyword"},
+            "title": {"type": "text"},
+            "summary": {"type": "text"},
+            # Plain float list, NOT knn_vector — thread similarity is python-side.
+            "summary_embedding": {"type": "float"},
+            "status": {"type": "keyword"},
+            "chapters": {"type": "object", "enabled": True},
+            "columns": {"type": "keyword"},
+            "first_seen": {"type": "date"},
+            "last_seen": {"type": "date"},
         }
     },
 }
@@ -517,6 +544,14 @@ class OpenSearchClient:
             logger.info("synthesis_index_created", index=SYNTHESIS_INDEX)
         return SYNTHESIS_INDEX
 
+    def ensure_events_index(self) -> str:
+        """Create the events (thread) index if it doesn't exist."""
+        if not self.client.indices.exists(index=EVENTS_INDEX):
+            logger.info("creating_events_index", index=EVENTS_INDEX)
+            self.client.indices.create(index=EVENTS_INDEX, body=EVENTS_MAPPING)
+            logger.info("events_index_created", index=EVENTS_INDEX)
+        return EVENTS_INDEX
+
     def store_synthesis(self, synthesis: dict, column: str) -> bool:
         """Store a synthesized story."""
         self.ensure_synthesis_index()
@@ -594,6 +629,8 @@ class OpenSearchClient:
                 "first_pub_date": synthesis.get("first_pub_date"),
                 "last_pub_date": synthesis.get("last_pub_date"),
                 "claim_graph": synthesis.get("claim_graph"),
+                "event_id": synthesis.get("event_id"),
+                "summary_embedding": synthesis.get("summary_embedding"),
             }
             actions.append({
                 "_index": SYNTHESIS_INDEX,
