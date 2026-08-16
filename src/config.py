@@ -62,6 +62,11 @@ class LLMSettings(BaseSettings):
     temperature: float = 0.3
     max_tokens: int = 4096
     context_length: int = 32768
+    # Prepend an empty <think></think> turn to suppress reasoning traces.
+    # Needed for Qwen "thinking" models; breaks models with their own chat
+    # template (e.g. LiquidAI LFM2 emits tool-call tokens). Set false for those.
+    skip_thinking: bool = True
+
     class Config:
         env_prefix = "LLM_"
 

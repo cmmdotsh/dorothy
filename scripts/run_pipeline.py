@@ -538,6 +538,7 @@ def daemon_mode(
         temperature=config.llm.temperature,
         max_tokens=config.llm.max_tokens,
         context_length=config.llm.context_length,
+        skip_thinking=config.llm.skip_thinking,
     )
 
     if not llm_client.health_check():

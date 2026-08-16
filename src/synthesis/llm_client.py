@@ -35,6 +35,7 @@ class LLMClient:
         max_tokens: int = 4096,
         context_length: int = 32768,
         timeout: float = 600.0,
+        skip_thinking: bool = True,
     ):
         self.base_url = base_url.rstrip("/")
         self.endpoint = f"{self.base_url}/v1/chat/completions"
@@ -43,6 +44,7 @@ class LLMClient:
         self.max_tokens = max_tokens
         self.context_length = context_length
         self.timeout = timeout
+        self.skip_thinking = skip_thinking
         self._client: Optional[httpx.Client] = None
 
     @property
@@ -66,15 +68,18 @@ class LLMClient:
         max_tokens: Optional[int] = None,
         response_format: Optional[dict] = None,
         chat_template_kwargs: Optional[dict] = None,
-        skip_thinking: bool = False,
+        skip_thinking: Optional[bool] = None,
     ) -> str:
         """Generate text completion.
 
         Args:
             skip_thinking: If True, prepend an assistant message with an empty
                 <think></think> block to prevent models from entering thinking
-                mode.
+                mode. Defaults to the client's configured value when None.
         """
+        if skip_thinking is None:
+            skip_thinking = self.skip_thinking
+
         messages = []
 
         if system_prompt:
@@ -195,7 +200,7 @@ class LLMClient:
     def health_check(self) -> bool:
         """Check if the LLM service is reachable."""
         try:
-            result = self.generate("Say 'ok' if you can read this.", max_tokens=10, skip_thinking=True)
+            result = self.generate("Say 'ok' if you can read this.", max_tokens=10)
             if result:
                 logger.info("llm_service_healthy", model=self.model)
                 return True

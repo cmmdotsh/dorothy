@@ -71,6 +71,7 @@ def run_synthesis(
         model=config.llm.model,
         temperature=config.llm.temperature,
         max_tokens=config.llm.max_tokens,
+        skip_thinking=config.llm.skip_thinking,
     )
 
     console.print(f"[dim]Checking LLM at {config.llm.base_url}...[/dim]")

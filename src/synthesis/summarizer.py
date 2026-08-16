@@ -304,7 +304,6 @@ class StorySummarizer:
             response = self.llm.generate(
                 prompt,
                 system_prompt=ORDERING_SYSTEM_PROMPT,
-                skip_thinking=True,
                 max_tokens=1024,
             )
             ordering = parse_llm_json(response)
