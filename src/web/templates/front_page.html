@@ -57,7 +57,7 @@
             </h2>
             {% set lead_preview = (lead_story.article or lead_story.summary or '')|plaintext %}
             {% if lead_preview %}
-            <p class="lead-summary">{{ lead_preview[:300] }}{% if lead_preview|length > 300 %}…{% endif %}</p>
+            <p class="lead-summary">{{ lead_preview|truncate(300, False, '…') }}</p>
             {% endif %}
             <div class="lead-meta">
                 <span class="lead-meta-num"><strong>{{ lead_story.source_count }}</strong> outlets</span>
@@ -97,18 +97,16 @@
                         {% set rail_color = bias_colors.get(first_bias, '#a855f7') %}
                     {% endif %}
                     <li class="dispatch" style="--fact-color: {{ rail_color }}">
-                        <span class="dispatch-num">№ 0{{ loop.index }}</span>
                         <span class="dispatch-rail" aria-hidden="true"></span>
                         <div class="dispatch-body">
                             <span class="dispatch-column">{{ col_name|title }}</span>
-                            {% if story.hero_image_url and not loop.last %}
-                            <a href="/story/{{ story.story_id }}" class="dispatch-image">
-                                <img src="{{ story.hero_image_url }}" alt="{{ story.generated_headline }}" loading="lazy">
-                            </a>
-                            {% endif %}
                             <h3 class="dispatch-headline">
                                 <a href="/story/{{ story.story_id }}">{{ story.generated_headline }}</a>
                             </h3>
+                            {% set dispatch_dek = (story.article or story.summary or '')|plaintext %}
+                            {% if dispatch_dek %}
+                            <p class="dispatch-dek">{{ dispatch_dek|truncate(170, False, '…') }}</p>
+                            {% endif %}
                             <div class="dispatch-meta">
                                 <span><strong>{{ story.source_count }}</strong> outlets</span>
                                 {% if story.bias_coverage %}
@@ -172,11 +170,6 @@
                 {% set section_stories = stories_by_column.get(col, []) %}
             {% endif %}
 
-            {% if section_stories and section_stories[0].hero_image_url %}
-            <a href="/story/{{ section_stories[0].story_id }}" class="section-thumb">
-                <img src="{{ section_stories[0].hero_image_url }}" alt="" loading="lazy">
-            </a>
-            {% endif %}
 
             {% if section_stories %}
             <ol class="section-headlines">
@@ -191,7 +184,7 @@
                     {% set first_bias = story.bias_coverage.keys()|list|first if story.bias_coverage else 'center' %}
                     {% set rail_color = bias_colors.get(first_bias, '#a855f7') %}
                 {% endif %}
-                <li class="sh-item" style="--fact-color: {{ rail_color }}">
+                <li class="sh-item{% if loop.first %} sh-item--lead{% endif %}" style="--fact-color: {{ rail_color }}">
                     <span class="sh-num">{{ loop.index }}</span>
                     <div class="sh-body">
                         <a href="/story/{{ story.story_id }}" class="sh-link">{{ story.generated_headline }}</a>
@@ -220,31 +213,43 @@
         <p class="departments-deck">The latest chapters of stories Dorothy has been following for days or months.</p>
     </header>
 
-    <ol class="col-dispatches dev-list">
+    <ol class="dev-list">
         {% for dev in developments %}
-        <li class="col-dispatch">
-            <span class="col-dispatch-num">{{ '%02d' % loop.index }}</span>
-            <span class="col-dispatch-rail" aria-hidden="true"></span>
-            <article class="col-dispatch-body">
-                <h3 class="col-dispatch-headline">
-                    <a href="/story/{{ dev.story.story_id }}">{{ dev.story.generated_headline }}</a>
-                </h3>
-                {% if dev.thread_title %}
-                <p class="col-dispatch-summary">
-                    Latest in <a class="dev-thread" href="/event/{{ dev.event_id }}">{{ dev.thread_title }}</a>{% if dev.chapter_count and dev.chapter_count > 1 %} — chapter {{ dev.chapter_count }}{% endif %}{% if dev.prev_headline and dev.prev_headline|lower != dev.story.generated_headline|lower %} — Previously: {{ dev.prev_headline }}{% endif %}{% if dev.gap_days and dev.gap_days > 14 %} <span class="dev-badge">Resurfaced after {{ dev.gap_days }} days</span>{% endif %}
-                </p>
+        {% set dup_headline = dev.thread_title and dev.story.generated_headline|lower == dev.thread_title|lower %}
+        <li class="dev-item">
+            {% if dev.thread_title %}
+            {% if (dev.chapter_count and dev.chapter_count > 1) or (dev.gap_days and dev.gap_days > 14) %}
+            <div class="dev-eyebrow">
+                {% if dev.chapter_count and dev.chapter_count > 1 %}<span class="dev-chno">chapter {{ dev.chapter_count }}</span>{% endif %}
+                {% if dev.gap_days and dev.gap_days > 14 %}<span class="dev-badge"><span aria-hidden="true">↻</span> Resurfaced after {{ dev.gap_days }} days</span>{% endif %}
+            </div>
+            {% endif %}
+            <h3 class="dev-thread-title">
+                <a class="dev-thread" href="/event/{{ dev.event_id }}">{{ dev.thread_title }}</a>
+            </h3>
+            {% endif %}
+            {% if not dup_headline %}
+            <h3 class="dev-headline{% if not dev.thread_title %} dev-headline--solo{% endif %}">
+                <a href="/story/{{ dev.story.story_id }}">{{ dev.story.generated_headline }}</a>
+            </h3>
+            {% endif %}
+            {% if dev.thread_title and dev.prev_headline and dev.prev_headline|lower != dev.story.generated_headline|lower %}
+            <p class="dev-previously"><span class="dev-prev-label">Previously:</span> {{ dev.prev_headline }}</p>
+            {% endif %}
+            <div class="dev-meta">
+                <span><strong>{{ dev.story.article_count }}</strong> articles</span>
+                <span class="dev-meta-sep">·</span>
+                <span><time class="timeago" datetime="{{ dev.story.generated_at }}">{{ dev.story.generated_at }}</time></span>
+                {% if dup_headline %}
+                <span class="dev-meta-sep">·</span>
+                <a class="dev-read" href="/story/{{ dev.story.story_id }}">Read the chapter <span aria-hidden="true">→</span></a>
                 {% endif %}
-                <div class="col-dispatch-meta">
-                    <span><strong>{{ dev.story.article_count }}</strong> articles</span>
-                    <span class="col-dispatch-meta-sep">·</span>
-                    <span><time class="timeago" datetime="{{ dev.story.generated_at }}">{{ dev.story.generated_at }}</time></span>
-                </div>
-            </article>
+            </div>
         </li>
         {% endfor %}
     </ol>
 
-    <a href="/events" class="section-more">All event threads <span aria-hidden="true">→</span></a>
+    <p class="dev-more"><a href="/events" class="section-more">All event threads <span aria-hidden="true">→</span></a></p>
     {% endif %}
 </section>
 {% endblock %}

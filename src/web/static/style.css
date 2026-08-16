@@ -446,9 +446,9 @@ img {
 
 .dispatch {
     display: grid;
-    grid-template-columns: 2.4rem 3px 1fr;
-    column-gap: 0.85rem;
-    padding: 1rem 0;
+    grid-template-columns: 3px 1fr;
+    column-gap: 0.9rem;
+    padding: 1.05rem 0;
     align-items: start;
     transition: background 0.2s;
 }
@@ -461,17 +461,6 @@ img {
     background: color-mix(in srgb, var(--fact-color, var(--text-muted)) 4%, transparent);
 }
 
-.dispatch-num {
-    font-family: 'Newsreader', Georgia, serif;
-    font-size: 1.35rem;
-    font-weight: 600;
-    color: var(--fact-color, var(--text-muted));
-    line-height: 1;
-    padding-top: 0.15rem;
-    font-variant-numeric: oldstyle-nums tabular-nums;
-    letter-spacing: 0.03em;
-    opacity: 0.85;
-}
 
 .dispatch-rail {
     align-self: stretch;
@@ -503,25 +492,6 @@ img {
     margin-bottom: 0.4rem;
 }
 
-.dispatch-image {
-    display: block;
-    overflow: hidden;
-    margin-bottom: 0.6rem;
-    background: var(--img-placeholder);
-}
-
-.dispatch-image img {
-    width: 100%;
-    aspect-ratio: 16 / 9;
-    object-fit: cover;
-    display: block;
-    filter: saturate(0.92);
-    transition: opacity 0.2s;
-}
-
-.dispatch-image:hover img {
-    opacity: 0.92;
-}
 
 .dispatch-headline {
     font-family: 'Newsreader', Georgia, 'Times New Roman', serif;
@@ -540,6 +510,14 @@ img {
 .dispatch-headline a:hover {
     text-decoration: none;
     color: var(--fact-color, var(--text-secondary));
+}
+
+.dispatch-dek {
+    font-family: 'Newsreader', Georgia, 'Times New Roman', serif;
+    font-size: 0.9rem;
+    line-height: 1.5;
+    color: var(--text-muted);
+    margin: 0 0 0.45rem 0;
 }
 
 .dispatch-meta {
@@ -566,8 +544,8 @@ img {
    FRONT PAGE — DEPARTMENTS HEADER
 ======================================== */
 .front-break {
-    margin-top: 2.5rem;
-    margin-bottom: 1rem;
+    margin-top: 3rem;
+    margin-bottom: 1.25rem;
     max-width: 100%;
 }
 
@@ -663,25 +641,6 @@ img {
     color: var(--text-secondary);
 }
 
-.section-thumb {
-    display: block;
-    overflow: hidden;
-    margin-bottom: 0.85rem;
-    background: var(--img-placeholder);
-}
-
-.section-thumb img {
-    width: 100%;
-    aspect-ratio: 16 / 9;
-    object-fit: cover;
-    display: block;
-    filter: saturate(0.92);
-    transition: opacity 0.2s;
-}
-
-.section-thumb:hover img {
-    opacity: 0.94;
-}
 
 .section-headlines {
     list-style: none;
@@ -694,7 +653,7 @@ img {
     display: grid;
     grid-template-columns: 1.5rem 1fr;
     column-gap: 0.65rem;
-    padding: 0.6rem 0;
+    padding: 0.8rem 0;
     border-bottom: 1px dotted var(--border-color);
     align-items: baseline;
     position: relative;
@@ -720,6 +679,23 @@ img {
 
 .sh-item:last-child {
     border-bottom: none;
+}
+
+.sh-item--lead .sh-link {
+    font-size: 1.32rem;
+    font-weight: 600;
+    line-height: 1.2;
+    letter-spacing: -0.014em;
+}
+
+.sh-item--lead {
+    padding-top: 0.2rem;
+    padding-bottom: 0.95rem;
+}
+
+.sh-item--lead .sh-num {
+    font-size: 1rem;
+    line-height: 1.6;
 }
 
 .sh-num {
@@ -892,6 +868,16 @@ time.timeago-full {
     margin: 0.4rem 0 0.85rem 0;
     letter-spacing: -0.025em;
     color: var(--text-primary);
+}
+
+.col-masthead-title--thread {
+    font-size: 2.5rem;
+    line-height: 1.08;
+    letter-spacing: -0.018em;
+    max-width: 26ch;
+    margin-left: auto;
+    margin-right: auto;
+    text-wrap: balance;
 }
 
 .col-masthead-deck {
@@ -1166,24 +1152,194 @@ time.timeago-full {
     border: 1px dashed var(--border-color);
 }
 
-/* — Developments strip (front page) — */
-.dev-thread {
+/* — Column / event masthead meta line — */
+.col-masthead-meta {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 0.68rem;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-top: 0.9rem;
+}
+
+/* — Thread group headers (events index) — */
+.thread-group-head {
+    text-align: center;
+    margin: 2.5rem 0 0.75rem;
+}
+
+.thread-group-kicker {
+    display: inline-block;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 0.66rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.26em;
+    color: var(--text-secondary);
+    padding-bottom: 0.4rem;
+    border-bottom: 1px solid var(--text-secondary);
+}
+
+/* — Developments (front page) — thread ledger — */
+.dev-list {
+    list-style: none;
+    padding: 0;
+    margin: 0 auto;
+    max-width: 860px;
+}
+
+.dev-item {
+    padding: 1.4rem 0 1.5rem;
+    border-top: 1px solid var(--border-color);
+}
+
+.dev-item:last-child {
+    border-bottom: 1px solid var(--border-color);
+}
+
+.dev-eyebrow {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.4rem 0.8rem;
+    margin-bottom: 0.55rem;
+}
+
+.dev-thread-title {
+    margin: 0 0 0.45rem 0;
+    line-height: 1.15;
+    text-wrap: balance;
+}
+
+.dev-read {
+    font-family: 'Newsreader', Georgia, serif;
+    font-size: 0.85rem;
     font-style: italic;
+    letter-spacing: 0;
+    color: var(--text-secondary);
+    border-bottom: 1px solid var(--border-color);
+    padding-bottom: 1px;
+    transition: color 0.2s, border-color 0.2s;
+}
+
+.dev-read:hover {
+    text-decoration: none;
+    color: var(--text-primary);
+    border-bottom-color: var(--text-primary);
+}
+
+.dev-thread {
+    font-family: 'Newsreader', Georgia, serif;
+    font-style: italic;
+    font-size: 1.5rem;
+    font-weight: 600;
+    line-height: 1.15;
+    letter-spacing: -0.01em;
+    color: var(--text-primary);
+}
+
+.dev-thread:hover {
+    text-decoration: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 4px;
+}
+
+.dev-chno {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 0.64rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.18em;
+    color: var(--text-muted);
+    white-space: nowrap;
 }
 
 .dev-badge {
-    display: inline-block;
-    margin-left: 0.5rem;
-    padding: 0.1rem 0.55rem;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-    font-size: 0.66rem;
-    letter-spacing: 0.08em;
+    font-size: 0.62rem;
+    font-weight: 700;
     text-transform: uppercase;
-    white-space: nowrap;
-    color: var(--text-muted);
-    border: 1px solid var(--border-color);
+    letter-spacing: 0.14em;
+    color: var(--text-secondary);
+    padding: 0.18rem 0.55rem;
+    border: 1px dotted var(--text-muted);
     border-radius: 999px;
-    vertical-align: middle;
+    white-space: nowrap;
+}
+
+.dev-headline {
+    font-family: 'Newsreader', Georgia, 'Times New Roman', serif;
+    font-size: 1.12rem;
+    font-weight: 500;
+    line-height: 1.3;
+    letter-spacing: -0.008em;
+    margin: 0 0 0.4rem 0;
+    text-wrap: balance;
+}
+
+.dev-headline a {
+    color: var(--text-secondary);
+}
+
+.dev-headline a:hover {
+    text-decoration: none;
+    color: var(--text-primary);
+}
+
+.dev-headline--solo {
+    font-size: 1.5rem;
+    font-weight: 600;
+    line-height: 1.18;
+    letter-spacing: -0.014em;
+}
+
+.dev-headline--solo a {
+    color: var(--text-primary);
+}
+
+.dev-previously {
+    font-family: 'Newsreader', Georgia, serif;
+    font-size: 0.88rem;
+    font-style: italic;
+    line-height: 1.5;
+    color: var(--text-muted);
+    margin: 0 0 0.5rem 0;
+}
+
+.dev-prev-label {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-style: normal;
+    font-size: 0.6rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.18em;
+    margin-right: 0.3rem;
+}
+
+.dev-meta {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    letter-spacing: 0.04em;
+}
+
+.dev-meta strong {
+    color: var(--text-primary);
+    font-weight: 700;
+    font-variant-numeric: oldstyle-nums tabular-nums;
+}
+
+.dev-meta-sep {
+    opacity: 0.4;
+}
+
+.dev-more {
+    text-align: center;
+    margin-top: 1.25rem;
 }
 
 /* ========================================
@@ -2679,7 +2835,7 @@ time.timeago-full {
     }
 
     .lead-headline {
-        font-size: 1.7rem;
+        font-size: 1.85rem;
     }
 
     .lead-summary {
@@ -2688,6 +2844,49 @@ time.timeago-full {
 
     .lead-summary::first-letter {
         font-size: 2.5rem;
+    }
+
+    .dispatch {
+        padding: 0.95rem 0;
+    }
+
+    .dispatch-headline {
+        font-size: 1.1rem;
+    }
+
+    .sh-item--lead .sh-link {
+        font-size: 1.18rem;
+    }
+
+    .dev-thread {
+        font-size: 1.28rem;
+    }
+
+    .dev-headline--solo {
+        font-size: 1.28rem;
+    }
+
+    .dev-item {
+        padding: 1.15rem 0 1.25rem;
+    }
+
+    .col-masthead-title {
+        font-size: 2.4rem;
+    }
+
+    .col-dispatch {
+        grid-template-columns: 2rem 3px minmax(0, 1fr);
+        column-gap: 0.7rem;
+        padding: 1.35rem 0 1.5rem 0;
+    }
+
+    .col-dispatch-num {
+        font-size: 1.25rem;
+        padding-top: 0.25rem;
+    }
+
+    .col-dispatch-headline {
+        font-size: 1.35rem;
     }
 
     .section-grid {

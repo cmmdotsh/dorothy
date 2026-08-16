@@ -34,7 +34,7 @@
         <p class="col-masthead-deck">Developing stories Dorothy has followed across days and months — each chapter links to the day's full synthesis.</p>
     </header>
 
-    <span class="col-masthead-kicker">Active threads</span>
+    <header class="thread-group-head"><span class="thread-group-kicker">Active threads</span></header>
     {% if active %}
         {{ thread_list(active) }}
     {% else %}
@@ -42,7 +42,7 @@
     {% endif %}
 
     {% if dormant %}
-    <span class="col-masthead-kicker">Dormant threads</span>
+    <header class="thread-group-head"><span class="thread-group-kicker">Dormant threads</span></header>
         {{ thread_list(dormant) }}
     {% endif %}
 </section>

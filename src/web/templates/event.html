@@ -6,9 +6,9 @@
 <section class="column-page">
     <header class="col-masthead">
         <span class="col-masthead-kicker">Event Thread</span>
-        <h2 class="col-masthead-title">{{ event.title }}</h2>
+        <h2 class="col-masthead-title col-masthead-title--thread">{{ event.title }}</h2>
         <p class="col-masthead-deck">{{ event.summary }}</p>
-        <p class="col-masthead-deck">
+        <p class="col-masthead-meta">
             {% if event.status == 'active' %}Active — last development {{ event.last_seen[:10] }}{% else %}Dormant since {{ event.last_seen[:10] }}{% endif %}
             <span class="col-dispatch-meta-sep">·</span>
             {{ event.chapters|length }} chapter{{ 's' if event.chapters|length != 1 }}
@@ -20,7 +20,7 @@
     <ol class="col-dispatches">
         {% for chapter in event.chapters[::-1] %}
         <li class="col-dispatch">
-            <span class="col-dispatch-num">{{ '%02d' % loop.index }}</span>
+            <span class="col-dispatch-num">{{ '%02d' % (event.chapters|length - loop.index0) }}</span>
             <span class="col-dispatch-rail" aria-hidden="true"></span>
             <article class="col-dispatch-body">
                 <h3 class="col-dispatch-headline">

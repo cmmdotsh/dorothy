@@ -48,7 +48,7 @@
 
                 {% set preview = (story.article or story.summary or '')|plaintext %}
                 {% if preview %}
-                <p class="col-dispatch-summary">{{ preview[:280] }}{% if preview|length > 280 %}…{% endif %}</p>
+                <p class="col-dispatch-summary">{{ preview|truncate(280, False, '…') }}</p>
                 {% endif %}
 
                 <div class="col-dispatch-meta">
