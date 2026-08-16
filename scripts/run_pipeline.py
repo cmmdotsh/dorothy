@@ -449,7 +449,7 @@ def run_synthesis(
                 if events_active:
                     # Stored-doc view the matcher consumes: the synthesis body
                     # doubles as the summary; column rides along for attach.
-                    doc["column"] = column
+                    doc.setdefault("column", column)
                     doc["summary"] = doc.get("article") or ""
                     _embed_synthesis_summary(doc, events_embedder)
                     _thread_synthesis_event(

@@ -14,10 +14,17 @@ import structlog
 from src.claim_graph.models import ClaimGraph
 from src.clustering import Story
 from src.synthesis.assembler import assemble_article, build_article_blocks
-from src.synthesis.json_utils import parse_llm_json
+from src.synthesis.json_utils import ensure_str, parse_llm_json
 from src.synthesis.llm_client import LLMClient, LLMError
 
 logger = structlog.get_logger(__name__)
+
+# Site sections; the synthesis schema's column enum and reassignment
+# validation both draw from this list.
+COLUMNS = ["politics", "tech", "money", "sports", "lifestyle"]
+
+# Defensive cap applied after parsing: some backends ignore schema maxLength.
+MAX_HEADLINE_LEN = 110
 
 ORDERING_SYSTEM_PROMPT = """You arrange verified news facts into a coherent article structure.
 
@@ -25,6 +32,12 @@ You receive a list of corroborated facts, each confirmed by multiple news source
 Return a JSON object with:
 - "headline": a neutral, factual headline for the story
 - "ordering": the facts arranged in logical narrative order, each with a short transition sentence
+
+Headline rules:
+- ONE story, ONE main fact per headline
+- NEVER join two stories with a semicolon or a comma splice
+- Active voice
+- At most 12 words
 
 Rules:
 - The first fact gets an empty transition (it is the lead)
@@ -62,10 +75,17 @@ class SynthesizedStory:
     first_pub_date: Optional[str] = None
     last_pub_date: Optional[str] = None
     claim_graph: dict = field(default_factory=dict)
+    # LLM-reassigned section; None means the story keeps its feed column.
+    column: Optional[str] = None
 
     def to_dict(self) -> dict:
-        """Convert to dictionary."""
-        return {
+        """Convert to dictionary.
+
+        "column" is emitted only when the LLM reassigned the story to a
+        different section, so run_pipeline's `doc.setdefault("column", ...)`
+        can stamp the feed column on everything else.
+        """
+        doc = {
             "story_id": self.story_id,
             "original_headline": self.original_headline,
             "generated_headline": self.generated_headline,
@@ -87,6 +107,9 @@ class SynthesizedStory:
             "last_pub_date": self.last_pub_date,
             "claim_graph": self.claim_graph,
         }
+        if self.column is not None:
+            doc["column"] = self.column
+        return doc
 
 
 @dataclass
@@ -272,6 +295,31 @@ class StorySummarizer:
             for a in articles
         ]
 
+    @staticmethod
+    def _clean_headline(raw: object) -> tuple[str, bool]:
+        """Defensively post-process an LLM headline.
+
+        Some backends ignore schema maxLength and headline rules, producing
+        two-story mashups ("X dies at 83; Y hits three home runs"). Keep only
+        the first story (segment before the first ';'), strip whitespace, and
+        cap at MAX_HEADLINE_LEN on a word boundary.
+
+        Returns:
+            (headline, changed) where changed is True if post-processing
+            altered the raw value.
+        """
+        headline = ensure_str(raw)
+        cleaned = headline.strip()
+        if ";" in cleaned:
+            cleaned = cleaned.split(";", 1)[0].strip()
+        if len(cleaned) > MAX_HEADLINE_LEN:
+            clipped = cleaned[:MAX_HEADLINE_LEN]
+            boundary = clipped.rfind(" ")
+            if boundary > 0:
+                clipped = clipped[:boundary]
+            cleaned = clipped.rstrip()
+        return cleaned, cleaned != headline
+
     def synthesize(
         self, story: Story, claim_graph: ClaimGraph,
     ) -> Optional[SynthesizedStory]:
@@ -305,10 +353,15 @@ class StorySummarizer:
                 )
             )
 
+        current_column = self._story_column(story)
         prompt = (
             "Arrange these corroborated facts into a news article.\n\n"
             + "\n".join(facts)
-            + '\n\nReturn JSON with "headline" and "ordering" keys.'
+            + '\n\nReturn JSON with "headline" and "ordering" keys.\n'
+            + 'Also return "column": the single best section for this story '
+            + "out of politics, tech, money, sports, lifestyle. Keep the "
+            + "current section unless the story clearly belongs elsewhere. "
+            + f"Current section: {current_column}."
         )
 
         # LMStudio enforces this server-side; keeps 1B-class models from
@@ -320,7 +373,7 @@ class StorySummarizer:
                 "schema": {
                     "type": "object",
                     "properties": {
-                        "headline": {"type": "string"},
+                        "headline": {"type": "string", "maxLength": 90},
                         "ordering": {
                             "type": "array",
                             "items": {
@@ -332,11 +385,13 @@ class StorySummarizer:
                                 "required": ["cluster"],
                             },
                         },
+                        "column": {"type": "string", "enum": list(COLUMNS)},
                     },
                     "required": ["headline", "ordering"],
                 },
             },
         }
+
 
         try:
             response = self.llm.generate(
@@ -351,6 +406,27 @@ class StorySummarizer:
                 logger.error("invalid_ordering_response", story_id=story.id)
                 return None
 
+            headline, headline_changed = self._clean_headline(ordering["headline"])
+            if headline_changed:
+                logger.info(
+                    "headline_trimmed",
+                    story_id=story.id,
+                    original=str(ordering["headline"]),
+                    trimmed=headline,
+                )
+
+            # LLM may reassign the story to a better-fitting section; only a
+            # valid, genuinely different column counts.
+            suggested = ordering.get("column")
+            column = None
+            if suggested in COLUMNS and suggested != current_column:
+                column = suggested
+                logger.info(
+                    "story_column_reassigned",
+                    story_id=story.id,
+                    **{"from": current_column, "to": column},
+                )
+
             viz_dict = claim_graph.to_viz_dict()
             article = assemble_article(viz_dict, ordering)
             viz_dict["article_blocks"] = build_article_blocks(viz_dict, ordering)
@@ -359,7 +435,7 @@ class StorySummarizer:
                 logger.warning("degenerate_article", story_id=story.id)
                 return None
 
-            is_sports = self._story_column(story) == "sports"
+            is_sports = current_column == "sports"
             sources_used = list(set(a.get("source_slug", "") for a in story.articles))
             similarity_edges = self._compute_similarity_edges(story.articles)
             article_refs = self._build_article_refs(story.articles)
@@ -371,7 +447,7 @@ class StorySummarizer:
             return SynthesizedStory(
                 story_id=story.id,
                 original_headline=story.headline,
-                generated_headline=ordering["headline"],
+                generated_headline=headline,
                 article=article,
                 sources_used=sources_used,
                 bias_coverage=coverage,
@@ -386,6 +462,7 @@ class StorySummarizer:
                 first_pub_date=timing.first_pub_date,
                 last_pub_date=timing.last_pub_date,
                 claim_graph=viz_dict,
+                column=column,
             )
 
         except (LLMError, json.JSONDecodeError, KeyError, TypeError, AttributeError, ValueError) as e:
