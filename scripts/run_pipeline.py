@@ -131,7 +131,13 @@ def run_targeted_extraction(os_client: OpenSearchClient) -> int:
     body text for articles that belong to multi-source story clusters.
     """
     index_name = os_client.get_current_index_name()
-    grouper = StoryGrouper(os_client, min_cluster_size=3, min_samples=2)
+    grouper = StoryGrouper(
+        os_client,
+        min_cluster_size=config.clustering.min_cluster_size,
+        min_samples=config.clustering.min_samples,
+        window_hours=config.clustering.window_hours,
+        max_per_source=config.clustering.max_per_source,
+    )
 
     # Collect article IDs that need extraction across all columns
     articles_to_extract = []
@@ -198,8 +204,10 @@ def run_synthesis(
     try:
         grouper = StoryGrouper(
             os_client,
-            min_cluster_size=3,
-            min_samples=2,
+            min_cluster_size=config.clustering.min_cluster_size,
+            min_samples=config.clustering.min_samples,
+            window_hours=config.clustering.window_hours,
+            max_per_source=config.clustering.max_per_source,
         )
         stories = grouper.get_stories_for_column(column, size=2000)
 

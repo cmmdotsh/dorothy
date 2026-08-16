@@ -279,11 +279,12 @@ class OpenSearchClient:
         query: Optional[str] = None,
         since: Optional[datetime] = None,
         size: int = 100,
-        index_name: Optional[str] = None,
+        index_name: Optional[str | list[str]] = None,
     ) -> list[dict]:
         """Search articles with optional filters."""
         if index_name is None:
             index_name = self.get_current_index_name()
+        index = ",".join(index_name) if isinstance(index_name, list) else index_name
 
         must_clauses = []
 
@@ -303,8 +304,7 @@ class OpenSearchClient:
         }
 
         try:
-            response = self.client.search(index=index_name, body=body)
-            return [hit["_source"] for hit in response["hits"]["hits"]]
+            response = self.client.search(index=index, body=body, ignore_unavailable=True)
         except Exception as e:
             logger.error("search_failed", error=str(e))
             return []

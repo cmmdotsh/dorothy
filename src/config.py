@@ -98,6 +98,19 @@ class ClaimGraphSettings(BaseSettings):
         env_prefix = "CLAIM_GRAPH_"
 
 
+class ClusteringSettings(BaseSettings):
+    """Story clustering settings."""
+    # Only articles published within this window enter clustering (daily paper).
+    window_hours: int = 72
+    # Per-cycle cap of articles per source per column (archive-dump guard).
+    max_per_source: int = 40
+    min_cluster_size: int = 3
+    min_samples: int = 2
+
+    class Config:
+        env_prefix = "CLUSTERING_"
+
+
 class PodcastSettings(BaseSettings):
     """Podcast generation settings."""
 
@@ -130,6 +143,7 @@ class DorothyConfig:
         self.llm = LLMSettings()
         self.extractor = ExtractorSettings()
         self.claim_graph = ClaimGraphSettings()
+        self.clustering = ClusteringSettings()
         self.podcast = PodcastSettings()
         self._sources: list[Source] = []
 

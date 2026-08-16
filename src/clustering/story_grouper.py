@@ -3,6 +3,7 @@
 import hashlib
 from collections import defaultdict
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import hdbscan
@@ -13,6 +14,11 @@ import structlog
 from src.storage import OpenSearchClient
 
 logger = structlog.get_logger(__name__)
+
+
+def utcnow() -> datetime:
+    """Current UTC time (timezone-aware)."""
+    return datetime.now(timezone.utc)
 
 
 def _make_story_id(articles: list[dict]) -> str:
@@ -108,6 +114,8 @@ class StoryGrouper:
         min_cluster_size: int = 3,
         min_samples: int = 2,
         cluster_selection_epsilon: float = 0.0,
+        window_hours: int = 72,
+        max_per_source: int = 40,
         # Legacy params (ignored, kept for backward compatibility)
         similarity_threshold: Optional[float] = None,
         k_neighbors: Optional[int] = None,
@@ -121,6 +129,8 @@ class StoryGrouper:
             min_cluster_size: Minimum articles to form a cluster (default: 3)
             min_samples: Core point density threshold (default: 2)
             cluster_selection_epsilon: Merge nearby clusters threshold (default: 0.0)
+            window_hours: Only cluster articles published this recently (default: 72)
+            max_per_source: Cap articles per source per fetch (default: 40)
             similarity_threshold: Deprecated, kept for backward compatibility
             k_neighbors: Deprecated, kept for backward compatibility
             max_cluster_size: Deprecated, cluster size is now managed by token-aware sampling in the summarizer
@@ -129,6 +139,8 @@ class StoryGrouper:
         self.min_cluster_size = min_cluster_size
         self.min_samples = min_samples
         self.cluster_selection_epsilon = cluster_selection_epsilon
+        self.window_hours = window_hours
+        self.max_per_source = max_per_source
 
         if similarity_threshold is not None or k_neighbors is not None:
             logger.warning(
@@ -343,11 +355,29 @@ class StoryGrouper:
 
         return stories
 
+    @staticmethod
+    def _cap_per_source(articles: list[dict], max_per_source: int) -> list[dict]:
+        """Keep at most max_per_source newest articles per source_slug."""
+        by_source: dict[str, list[dict]] = {}
+        for a in articles:
+            by_source.setdefault(a.get("source_slug", ""), []).append(a)
+        kept: list[dict] = []
+        dropped = 0
+        for source, group in by_source.items():
+            group.sort(key=lambda a: a.get("pub_date") or "", reverse=True)
+            kept.extend(group[:max_per_source])
+            dropped += max(0, len(group) - max_per_source)
+        if dropped:
+            logger.info("per_source_cap_applied", dropped=dropped,
+                        max_per_source=max_per_source)
+        return kept
+
     def get_stories_for_column(
         self,
         column: str,
         size: int = 100,
         index_name: Optional[str] = None,
+        now: Optional[datetime] = None,
     ) -> list[Story]:
         """
         Get clustered stories for a specific column.
@@ -356,15 +386,23 @@ class StoryGrouper:
             column: Column name to filter by
             size: Maximum number of articles to process
             index_name: OpenSearch index name
+            now: Reference time for the recency window (defaults to current UTC time)
 
         Returns:
             List of Story objects
         """
+        if now is None:
+            now = utcnow()
+        since = now - timedelta(hours=self.window_hours)
+        if index_name is None and since.strftime("%Y-%m") != now.strftime("%Y-%m"):
+            index_name = [
+                f"dorothy-articles-{since.strftime('%Y-%m')}",
+                self.os_client.get_current_index_name(),
+            ]
         articles = self.os_client.search_articles(
-            column=column,
-            size=size,
-            index_name=index_name,
+            column=column, size=size, since=since, index_name=index_name,
         )
+        articles = self._cap_per_source(articles, self.max_per_source)
 
         # Filter to only articles with embeddings
         articles_with_embeddings = [a for a in articles if a.get("embedding")]
