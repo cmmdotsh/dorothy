@@ -111,6 +111,24 @@ class ClusteringSettings(BaseSettings):
         env_prefix = "CLUSTERING_"
 
 
+class EventSettings(BaseSettings):
+    """Event thread matching settings."""
+    # Master switch for the event-threads feature (pipeline stages guard on it).
+    enabled: bool = True
+    # Minimum cosine similarity for a thread/threadless candidate to reach
+    # the LLM confirm shortlist.
+    shortlist_threshold: float = 0.60
+    # Max candidates confirmed by the LLM per story per stage.
+    shortlist_k: int = 3
+    # Events unseen for this many days become dormant.
+    dormant_after_days: int = 14
+    # How far back threadless syntheses are considered for recurrence birth.
+    threadless_window_days: int = 14
+
+    class Config:
+        env_prefix = "EVENTS_"
+
+
 class PodcastSettings(BaseSettings):
     """Podcast generation settings."""
 
@@ -144,6 +162,7 @@ class DorothyConfig:
         self.extractor = ExtractorSettings()
         self.claim_graph = ClaimGraphSettings()
         self.clustering = ClusteringSettings()
+        self.events = EventSettings()
         self.podcast = PodcastSettings()
         self._sources: list[Source] = []
 
