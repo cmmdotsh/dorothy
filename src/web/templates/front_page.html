@@ -178,6 +178,7 @@
             </a>
             {% endif %}
 
+            {% if section_stories %}
             <ol class="section-headlines">
                 {% for story in section_stories[:3] %}
                 {% if col == 'sports' %}
@@ -199,6 +200,9 @@
                 </li>
                 {% endfor %}
             </ol>
+            {% else %}
+            <p class="col-no-stories">A quiet day on the {{ col }} desk.</p>
+            {% endif %}
 
             <a href="/column/{{ col }}" class="section-more">More from {{ col }} <span aria-hidden="true">→</span></a>
         </section>

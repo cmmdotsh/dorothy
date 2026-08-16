@@ -15,9 +15,10 @@ import hashlib
 import re
 import shutil
 from pathlib import Path
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from xml.etree.ElementTree import parse as parse_xml
 
+from dateutil import parser as dateutil_parser
 import structlog
 from jinja2 import Environment, FileSystemLoader
 from markupsafe import Markup
@@ -120,6 +121,11 @@ def _dedup_stories(stories: list[dict], threshold: float = 0.3) -> list[dict]:
             kept_url_sets.append(urls)
 
     return kept
+
+
+def _utcnow() -> datetime:
+    """Current UTC time (patchable in tests)."""
+    return datetime.now(timezone.utc)
 
 
 def get_podcast_episodes(output_dir: Path) -> list[dict]:
@@ -274,9 +280,32 @@ class StaticSiteGenerator:
                 break
         return story
 
-    def get_stories_for_column(self, column: str, limit: int = 20) -> list[dict]:
-        """Get synthesized stories for a column (deduped)."""
+    def get_stories_for_column(self, column: str, limit: int = 20,
+                               max_age_hours: int | None = 72) -> list[dict]:
+        """Get synthesized stories for a column (deduped, freshness-filtered).
+
+        Front/column pages only show syntheses generated within max_age_hours
+        so the dateline stays honest; None keeps full history (story pages).
+        """
         stories = self.os_client.get_syntheses(column=column, limit=max(limit * 5, 50))
+        if max_age_hours is not None:
+            cutoff = _utcnow() - timedelta(hours=max_age_hours)
+            fresh = []
+            for s in stories:
+                generated_at = s.get("generated_at")
+                if not generated_at:
+                    continue
+                try:
+                    generated_at = dateutil_parser.isoparse(generated_at)
+                except (ValueError, TypeError):
+                    continue
+                if generated_at >= cutoff:
+                    fresh.append(s)
+            if len(fresh) != len(stories):
+                logger.info("stale_syntheses_filtered", column=column,
+                            kept=len(fresh), total=len(stories),
+                            max_age_hours=max_age_hours)
+            stories = fresh
         stories = _dedup_stories(stories)[:limit]
         return [self._backfill_image_credit(s) for s in stories]
 
