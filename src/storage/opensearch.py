@@ -332,6 +332,7 @@ class OpenSearchClient:
 
         try:
             response = self.client.search(index=index, body=body, ignore_unavailable=True)
+            return [hit["_source"] for hit in response["hits"]["hits"]]
         except Exception as e:
             logger.error("search_failed", error=str(e))
             return []

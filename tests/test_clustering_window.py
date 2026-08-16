@@ -55,3 +55,13 @@ def test_mid_month_queries_single_index():
                              now=datetime(2026, 8, 16, tzinfo=timezone.utc))
     kwargs = client.search_articles.call_args.kwargs
     assert kwargs["index_name"] is None  # default = current index
+
+
+def test_search_articles_returns_hits():
+    """Regression: the multi-index refactor once dropped the success return."""
+    from src.storage.opensearch import OpenSearchClient
+    client = OpenSearchClient.__new__(OpenSearchClient)
+    client.client = MagicMock()
+    client.client.search.return_value = {"hits": {"hits": [{"_source": {"id": "a1"}}]}}
+    got = client.search_articles(column="politics", index_name="dorothy-articles-2026-08")
+    assert got == [{"id": "a1"}]
