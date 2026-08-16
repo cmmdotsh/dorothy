@@ -808,7 +808,7 @@ class OpenSearchClient:
                     }
                 },
                 "size": 10,
-                "_source": ["story_id", "article_urls", "article_count", "generated_headline"],
+                "_source": ["story_id", "article_urls", "article_count", "generated_headline", "event_id"],
             }
 
             response = self.client.search(index=SYNTHESIS_INDEX, body=body)
@@ -846,7 +846,7 @@ class OpenSearchClient:
                     }
                 },
                 "size": 200,
-                "_source": ["story_id", "article_urls", "article_count", "generated_headline"],
+                "_source": ["story_id", "article_urls", "article_count", "generated_headline", "event_id"],
             }
 
             col_response = self.client.search(index=SYNTHESIS_INDEX, body=col_body)

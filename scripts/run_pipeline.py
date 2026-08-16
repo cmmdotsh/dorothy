@@ -32,6 +32,8 @@ from src.synthesis import LLMClient, StorySummarizer
 from src.synthesis.summarizer import compute_story_timing
 from src.embeddings import EmbeddingClient
 from src.embeddings.generator import generate_embeddings, generate_embeddings_for_articles
+from src.events import EventMatcher, EventStore
+from src.events.matcher import resolve_event_id
 from src.claim_graph import ClaimGraphBuilder
 from scripts.render_static import StaticSiteGenerator
 
@@ -191,6 +193,123 @@ def _write_story(
     synthesized.edition = edition
     return synthesized, story
 
+def _embed_synthesis_summary(doc: dict, embedding_client) -> None:
+    """Embed headline + summary onto the synthesis doc before storing.
+
+    Best effort: on failure the doc is stored without an embedding and the
+    event matcher skips it (missing summary_embedding).
+    """
+    if embedding_client is None:
+        return
+    try:
+        # 500-char cap on the body keeps the text inside the embedding model's
+        # context window (same cap as the backfill bootstrap script).
+        text = (doc.get("generated_headline") or "") + "\n" + (doc.get("summary") or "")[:500]
+        doc["summary_embedding"] = embedding_client.embed_single(text)
+    except Exception as e:
+        logger.warning(
+            "synthesis_embedding_failed", story_id=doc.get("story_id"), error=str(e)
+        )
+
+
+def _plan_event_attachment(
+    doc: dict,
+    inherited_event_id: Optional[str],
+    matcher_result: Optional[str],
+) -> tuple[Optional[str], Optional[dict]]:
+    """Pure decision: which event_id a synthesis doc gets, and the chapter to
+    attach when that id was inherited (Jaccard fast-path).
+
+    An inherited id wins over the matcher. A matcher result arrives already
+    attached (the matcher does its own chapter bookkeeping), so only the
+    inherit path yields a chapter. Returns (event_id, chapter_or_None).
+    """
+    event_id = resolve_event_id(
+        {"event_id": inherited_event_id} if inherited_event_id else None,
+        matcher_result,
+    )
+    if not event_id:
+        return None, None
+    if event_id == inherited_event_id:
+        chapter = {
+            "story_id": doc.get("story_id"),
+            "generated_headline": doc.get("generated_headline"),
+            "generated_at": doc.get("generated_at"),
+            "article_count": len(doc.get("article_urls") or []),
+        }
+        return event_id, chapter
+    return event_id, None
+
+
+def _thread_synthesis_event(
+    doc: dict,
+    column: str,
+    inherited_event_id: Optional[str],
+    event_store: Optional[EventStore],
+    event_matcher: Optional[EventMatcher],
+) -> Optional[str]:
+    """Wire one synthesized doc into the event-threads stage. Never raises.
+
+    Inherit fast-path (story evolved from a threaded synthesis): record the
+    event_id on the doc first, then attach the chapter LLM-free, keeping the
+    thread's rolling summary and embedding unchanged. Otherwise the matcher
+    decides — it attaches/births and tags synthesis docs itself.
+    """
+    if event_store is None and event_matcher is None:
+        return None
+    try:
+        matcher_result = None
+        if (
+            event_matcher is not None
+            and not inherited_event_id
+            and doc.get("summary_embedding")
+        ):
+            matcher_result = event_matcher.match_story(doc)
+
+        event_id, chapter = _plan_event_attachment(
+            doc, inherited_event_id, matcher_result
+        )
+        if not event_id:
+            return None
+
+        if chapter is not None:
+            # Link first: a failed attach must not orphan the thread chain.
+            doc["event_id"] = event_id
+            if event_store is not None:
+                event = event_store.get_event(event_id)
+                if event is None:
+                    logger.warning(
+                        "event_inherit_attach_skipped",
+                        event_id=event_id,
+                        story_id=doc.get("story_id"),
+                    )
+                else:
+                    event_store.attach_chapter(
+                        event_id,
+                        chapter,
+                        new_summary=event.summary,
+                        new_embedding=event.summary_embedding,
+                        column=column,
+                    )
+        else:
+            doc["event_id"] = event_id
+
+        logger.info(
+            "synthesis_event_linked",
+            story_id=doc.get("story_id"),
+            event_id=event_id,
+            inherited=chapter is not None,
+        )
+        return event_id
+    except Exception as e:
+        logger.error(
+            "events_stage_failed",
+            stage="synthesis",
+            story_id=doc.get("story_id"),
+            error=str(e),
+        )
+        return None
+
 
 def run_synthesis(
     os_client: OpenSearchClient,
@@ -199,6 +318,8 @@ def run_synthesis(
     edition: int = 1,
     limit: Optional[int] = None,
     graph_builder: ClaimGraphBuilder = None,
+    event_store: Optional[EventStore] = None,
+    event_matcher: Optional[EventMatcher] = None,
 ) -> int:
     """Synthesize stories for a column with deduplication. Returns count of stories synthesized."""
     try:
@@ -221,6 +342,8 @@ def run_synthesis(
         skipped = 0
         # Track URLs of stories synthesized in this batch for intra-batch dedup
         batch_url_sets: list[set[str]] = []
+        # Event threads inherited via story evolution (story_id -> event_id)
+        inherited_event_ids: dict[str, str] = {}
 
         # Pass 1: sequential dedup filtering (fast — set ops + OpenSearch queries)
         stories_to_synthesize = []
@@ -280,6 +403,15 @@ def run_synthesis(
                             os_client.mark_synthesis_historical(
                                 existing["story_id"], story.id
                             )
+                            inherited_event_id = existing.get("event_id")
+                            if inherited_event_id:
+                                logger.info(
+                                    "story_inherits_event",
+                                    story_id=story.id,
+                                    event_id=inherited_event_id,
+                                    existing_id=existing["story_id"],
+                                )
+                                inherited_event_ids[story.id] = inherited_event_id
 
                     batch_url_sets.append(cluster_url_set)
 
@@ -301,31 +433,48 @@ def run_synthesis(
             return 0
 
         # Pass 2: write each story sequentially
-        results = []
+        result_dicts = []
+        events_active = event_store is not None or event_matcher is not None
+        # The matcher's embedding client doubles as the synthesis embedder.
+        events_embedder = event_matcher.embedding_client if event_matcher else None
 
         for story in stories_to_synthesize:
             try:
                 synthesized, story = _write_story(summarizer, story, edition, graph_builder)
-                if synthesized:
-                    results.append(synthesized)
+                if not synthesized:
+                    continue
+                doc = synthesized.to_dict()
+                if events_active:
+                    # Stored-doc view the matcher consumes: the synthesis body
+                    # doubles as the summary; column rides along for attach.
+                    doc["column"] = column
+                    doc["summary"] = doc.get("article") or ""
+                    _embed_synthesis_summary(doc, events_embedder)
+                    _thread_synthesis_event(
+                        doc,
+                        column,
+                        inherited_event_ids.get(story.id),
+                        event_store,
+                        event_matcher,
+                    )
+                result_dicts.append(doc)
             except Exception as e:
                 logger.error("story_synthesis_error", story_id=story.id, column=column, error=str(e))
 
         # Store in OpenSearch
-        if results:
+        if result_dicts:
             try:
-                result_dicts = [r.to_dict() for r in results]
                 os_client.bulk_store_syntheses(result_dicts, column)
             except Exception as e:
                 logger.error(
                     "synthesis_storage_error",
                     column=column,
-                    count=len(results),
+                    count=len(result_dicts),
                     error=str(e),
                 )
                 return 0
 
-        return len(results)
+        return len(result_dicts)
 
     except Exception as e:
         logger.error(
@@ -492,16 +641,64 @@ def run_pipeline_cycle(
         max_chunk_chars=config.claim_graph.max_chunk_chars,
     )
 
+    # Event threads (recurrence tracking): built once per cycle, guarded by
+    # config.events.enabled. Any failure here disables the stage for this
+    # cycle — the events stage must never fail the cycle itself.
+    event_store = None
+    event_matcher = None
+    event_embed_client = None
+    if config.events.enabled:
+        try:
+            event_embed_client = EmbeddingClient(
+                base_url=config.embedding.base_url,
+                model=config.embedding.model,
+            )
+            event_store = EventStore(os_client)
+            event_store.ensure_index()
+            event_matcher = EventMatcher(
+                event_store, llm_client, event_embed_client, config.events,
+            )
+        except Exception as e:
+            logger.error("events_stage_failed", stage="setup", error=str(e))
+            event_store = None
+            event_matcher = None
+            if event_embed_client:
+                event_embed_client.close()
+                event_embed_client = None
+
+
     for column in COLUMNS:
         console.print(f"  [dim]{column}...[/dim]", end=" ")
         try:
-            count = run_synthesis(os_client, llm_client, column, edition=edition, limit=stories_per_column, graph_builder=graph_builder)
+            count = run_synthesis(
+                os_client, llm_client, column,
+                edition=edition, limit=stories_per_column,
+                graph_builder=graph_builder,
+                event_store=event_store, event_matcher=event_matcher,
+            )
             synthesis_counts[column] = count
             console.print(f"[green]{count} stories[/green]")
         except Exception as e:
             logger.error("column_synthesis_failed", column=column, error=str(e))
             console.print(f"[red]0 stories (error)[/red]")
             synthesis_counts[column] = 0
+
+    # Event threads: age out quiet events at end of cycle, then release the
+    # stage's embedding client.
+    if event_store:
+        try:
+            dormant = event_store.mark_dormant_older_than(
+                config.events.dormant_after_days
+            )
+            logger.info(
+                "events_marked_dormant",
+                count=dormant,
+                after_days=config.events.dormant_after_days,
+            )
+        except Exception as e:
+            logger.error("events_stage_failed", stage="mark_dormant", error=str(e))
+    if event_embed_client:
+        event_embed_client.close()
 
     # Step 4+5: Render and deploy
     if render_and_deploy:
