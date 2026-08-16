@@ -311,11 +311,39 @@ class StorySummarizer:
             + '\n\nReturn JSON with "headline" and "ordering" keys.'
         )
 
+        # LMStudio enforces this server-side; keeps 1B-class models from
+        # returning ordering entries as bare strings/ints (verified 2026-08-16).
+        response_format = {
+            "type": "json_schema",
+            "json_schema": {
+                "name": "article_ordering",
+                "schema": {
+                    "type": "object",
+                    "properties": {
+                        "headline": {"type": "string"},
+                        "ordering": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "cluster": {"type": "integer"},
+                                    "transition": {"type": "string"},
+                                },
+                                "required": ["cluster"],
+                            },
+                        },
+                    },
+                    "required": ["headline", "ordering"],
+                },
+            },
+        }
+
         try:
             response = self.llm.generate(
                 prompt,
                 system_prompt=ORDERING_SYSTEM_PROMPT,
                 max_tokens=1024,
+                response_format=response_format,
             )
             ordering = parse_llm_json(response)
 
@@ -360,6 +388,6 @@ class StorySummarizer:
                 claim_graph=viz_dict,
             )
 
-        except (LLMError, json.JSONDecodeError, KeyError) as e:
+        except (LLMError, json.JSONDecodeError, KeyError, TypeError, AttributeError, ValueError) as e:
             logger.error("synthesis_failed", story_id=story.id, error=str(e))
             return None

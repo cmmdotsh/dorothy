@@ -1,8 +1,38 @@
 """Assemble articles from claim graph clusters and LLM ordering."""
 
+import re
+
 import structlog
 
 logger = structlog.get_logger(__name__)
+
+
+def _entry_index(entry) -> int:
+    """Coerce one LLM ordering entry into a cluster index.
+
+    Small models return dicts with varying key names, bare ints, or strings
+    like "Fact 3" — accept them all; -1 means unusable.
+    """
+    if isinstance(entry, dict):
+        raw = entry.get("cluster", entry.get("fact_id", entry.get("fact", entry.get("index", -1))))
+    else:
+        raw = entry
+    if isinstance(raw, bool):
+        return -1
+    if isinstance(raw, (int, float)):
+        return int(raw)
+    if isinstance(raw, str):
+        match = re.search(r"\d+", raw)
+        if match:
+            return int(match.group())
+    return -1
+
+
+def _entry_transition(entry) -> str:
+    if isinstance(entry, dict):
+        transition = entry.get("transition", "")
+        return transition if isinstance(transition, str) else ""
+    return ""
 
 
 def assemble_article(claim_graph: dict, ordering: dict) -> str:
@@ -18,8 +48,8 @@ def assemble_article(claim_graph: dict, ordering: dict) -> str:
     paragraphs = []
 
     for entry in order:
-        idx = entry.get("cluster", entry.get("fact_id", entry.get("fact", entry.get("index", -1))))
-        transition = entry.get("transition", "")
+        idx = _entry_index(entry)
+        transition = _entry_transition(entry)
 
         if idx < 0 or idx >= len(clusters):
             logger.warning("invalid_cluster_index", index=idx, max=len(clusters))
@@ -72,8 +102,8 @@ def build_article_blocks(claim_graph: dict, ordering: dict) -> list[dict]:
     blocks = []
 
     for entry in order:
-        idx = entry.get("cluster", entry.get("fact_id", entry.get("fact", entry.get("index", -1))))
-        transition = entry.get("transition", "")
+        idx = _entry_index(entry)
+        transition = _entry_transition(entry)
 
         if idx < 0 or idx >= len(clusters):
             continue
