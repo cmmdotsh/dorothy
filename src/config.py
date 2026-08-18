@@ -88,7 +88,10 @@ class ClaimGraphSettings(BaseSettings):
     """Claim graph analysis settings."""
 
     enabled: bool = True
-    similarity_threshold: float = 0.75
+    # Chunk-pair cosine floor for corroboration. Measured 2026-08-16 against
+    # LLM-judged pairs: at 0.75 mxbai keeps ~37% false corroborations; 0.82
+    # is the F1 optimum (precision 75%, recall 67%, AUC 0.931).
+    similarity_threshold: float = 0.82
     min_sources_corroborated: int = 2
     embedding_concurrency: int = 32
     min_chunk_chars: int = 80

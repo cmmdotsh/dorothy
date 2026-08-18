@@ -5,6 +5,9 @@ builds a cosine similarity graph, and groups high-similarity cross-source
 chunks into claim clusters.
 """
 
+import difflib
+import re
+
 import numpy as np
 import structlog
 from sklearn.metrics.pairwise import cosine_distances
@@ -15,6 +18,43 @@ from src.claim_graph.models import Chunk, ClaimCluster, ClaimGraph
 from src.clustering import Story
 
 logger = structlog.get_logger(__name__)
+
+
+def _normalize_text(text: str) -> str:
+    """Normalize for syndication comparison: casefold, unify quotes, squash
+    punctuation/whitespace so wire copies differing only in glyphs compare equal."""
+    text = re.sub(r"[\u2018\u2019\u201c\u201d]", "'", text.casefold())
+    return re.sub(r"\s+", " ", re.sub(r"[^a-z0-9' ]", " ", text)).strip()
+
+
+def count_independent_sources(chunks: list[Chunk]) -> int:
+    """Count sources that INDEPENDENTLY state a claim.
+
+    Syndicated wire copy (the same AP text republished by several outlets)
+    is one source, not corroboration: chunks whose normalized texts are
+    near-verbatim (SequenceMatcher ratio >= 0.85) collapse into one wording
+    group. Corroboration = number of distinct wordings, capped by the number
+    of distinct articles. Measured 2026-08-16: 17% of corroboration pairs
+    were verbatim wire copies at cosine ~1.0.
+    """
+    texts = [_normalize_text(c.text)[:600] for c in chunks]
+    wording_groups: list[int] = []  # representative index per group
+    for i, text in enumerate(texts):
+        for rep in wording_groups:
+            if difflib.SequenceMatcher(None, text, texts[rep]).ratio() >= 0.85:
+                break
+        else:
+            wording_groups.append(i)
+    distinct_articles = len(set(c.article_id for c in chunks))
+    independent = min(len(wording_groups), distinct_articles)
+    if independent < distinct_articles:
+        logger.debug(
+            "syndicated_copy_collapsed",
+            chunks=len(chunks),
+            articles=distinct_articles,
+            independent=independent,
+        )
+    return independent
 
 
 class ClaimGraphBuilder:
@@ -123,7 +163,7 @@ class ClaimGraphBuilder:
         for indices in groups.values():
             group_chunks = [embedded[i] for i in indices]
             source_names = list(dict.fromkeys(c.source_name for c in group_chunks))
-            unique_sources = len(set(c.article_id for c in group_chunks))
+            unique_sources = count_independent_sources(group_chunks)
 
             if unique_sources < self.min_sources_corroborated:
                 unique_details.extend(group_chunks)
