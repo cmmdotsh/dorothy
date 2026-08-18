@@ -88,10 +88,17 @@ class ClaimGraphSettings(BaseSettings):
     """Claim graph analysis settings."""
 
     enabled: bool = True
-    # Chunk-pair cosine floor for corroboration. Measured 2026-08-16 against
-    # LLM-judged pairs: at 0.75 mxbai keeps ~37% false corroborations; 0.82
-    # is the F1 optimum (precision 75%, recall 67%, AUC 0.931).
-    similarity_threshold: float = 0.82
+    # Dedicated embedder for chunk corroboration. Chunk embeddings are
+    # transient (recomputed per story, never stored), so this model can
+    # differ from the global EMBEDDING_MODEL whose vectors persist in
+    # OpenSearch. Empty string = fall back to the global embedding model.
+    # Shootout 2026-08-17 on 108 LLM-judged chunk pairs: qwen3-embedding-0.6b
+    # AUC 0.950 / F1 0.82 vs mxbai-large AUC 0.931 / F1 0.71.
+    embedding_model: str = "text-embedding-qwen3-embedding-0.6b"
+    # Chunk-pair cosine floor for corroboration, tuned PER MODEL:
+    # qwen3-embedding-0.6b optimum 0.74 (precision 75%, recall 83%);
+    # for mxbai-large use 0.82 (precision 75%, recall 67%).
+    similarity_threshold: float = 0.74
     min_sources_corroborated: int = 2
     embedding_concurrency: int = 32
     min_chunk_chars: int = 80

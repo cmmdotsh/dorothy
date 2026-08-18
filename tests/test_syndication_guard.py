@@ -35,3 +35,10 @@ def test_wire_pair_plus_independent_is_two():
 def test_two_wordings_one_article_capped_by_articles():
     assert count_independent_sources([_chunk("a1", WIRE, "ap"),
                                       _chunk("a1", OWN_WORDING, "ap")]) == 1
+
+
+def test_claim_graph_has_dedicated_embedder_defaults():
+    from src.config import ClaimGraphSettings
+    s = ClaimGraphSettings()
+    assert s.embedding_model == "text-embedding-qwen3-embedding-0.6b"
+    assert s.similarity_threshold == 0.74

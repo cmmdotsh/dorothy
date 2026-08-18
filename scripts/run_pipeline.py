@@ -635,7 +635,7 @@ def run_pipeline_cycle(
     # Build claim graph builder (required for extractive synthesis)
     graph_builder = ClaimGraphBuilder(
         base_url=config.embedding.base_url,
-        model=config.embedding.model,
+        model=config.claim_graph.embedding_model or config.embedding.model,
         similarity_threshold=config.claim_graph.similarity_threshold,
         min_sources_corroborated=config.claim_graph.min_sources_corroborated,
         embedding_concurrency=config.claim_graph.embedding_concurrency,
