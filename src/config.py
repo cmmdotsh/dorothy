@@ -46,7 +46,7 @@ class EmbeddingSettings(BaseSettings):
     """Embedding service settings (via LMStudio)."""
 
     base_url: str = "http://192.168.0.149:1234"
-    model: str = "text-embedding-mxbai-embed-large-v1"
+    model: str = "text-embedding-qwen3-embedding-0.6b"
     batch_size: int = 32
     enabled: bool = True
 

@@ -61,7 +61,7 @@ services:
       - OPENSEARCH_PORT=9200
       - OPENSEARCH_USE_SSL=false
       - EMBEDDING_BASE_URL=${EMBEDDING_BASE_URL:-http://host.docker.internal:1234}
-      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-text-embedding-mxbai-embed-large-v1}
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-text-embedding-qwen3-embedding-0.6b}
     networks:
       - dorothy-net
     extra_hosts:
@@ -108,7 +108,7 @@ services:
       - LLM_MAX_TOKENS=4096
       - LLM_CONTEXT_LENGTH=${LLM_CONTEXT_LENGTH:-32768}
       - EMBEDDING_BASE_URL=${EMBEDDING_BASE_URL:-http://host.docker.internal:1234}
-      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-text-embedding-mxbai-embed-large-v1}
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-text-embedding-qwen3-embedding-0.6b}
       - S3_BUCKET=${S3_BUCKET}
       - AWS_REGION=${AWS_REGION:-us-east-1}
       - CLOUDFRONT_ID=${CLOUDFRONT_ID:-}
@@ -141,7 +141,7 @@ services:
       - LLM_MODEL=${LLM_MODEL:-mlx-community/qwen3.5-35b-a3b}
       - LLM_SKIP_THINKING=${LLM_SKIP_THINKING:-true}
       - EMBEDDING_BASE_URL=${EMBEDDING_BASE_URL:-http://host.docker.internal:1234}
-      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-text-embedding-mxbai-embed-large-v1}
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-text-embedding-qwen3-embedding-0.6b}
     networks:
       - dorothy-net
     extra_hosts:
